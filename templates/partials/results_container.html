@@ -1,0 +1,45 @@
+<section id="results" class="results" aria-live="polite">
+  <div class="results-header">
+    <div class="results-meta">
+      <span class="meta-filename">{{ filename }}</span>
+      <span class="meta-pages">{{ page_count }} page{{ "s" if page_count != 1 else "" }}</span>
+    </div>
+  </div>
+
+
+  <!-- ── Fix / download panel ──────────────────────────────────── -->
+  {% include "partials/fix_panel.html" %}
+
+  <footer class="results-footer">
+    <details class="boxes-debug-footer">
+      <summary>PDF box debug</summary>
+      <p class="boxes-debug-note">
+        Illustrator uses <strong>CropBox</strong> as its artboard. Boxes marked
+        <span class="box-tag box-tag--inherited">= MediaBox</span> are not explicitly
+        set in the file — they fall back to the MediaBox.
+      </p>
+      {% for pg in page_boxes %}
+      <div class="boxes-page-block">
+        <div class="boxes-page-header">Page {{ pg.page }}</div>
+        <table class="boxes-table">
+          <thead>
+            <tr><th>Box</th><th>W × H (in)</th><th>W × H (pt)</th><th>X0, Y0 → X1, Y1 (pt)</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for box_name in pg.box_order %}
+            {% set b = pg.boxes[box_name] %}
+            <tr class="{{ 'box-row--explicit' if b.explicit else 'box-row--inherited' }}">
+              <td class="box-name">{{ box_name }}</td>
+              <td class="box-dims">{{ "%.4f"|format(b.w_in) }}"&thinsp;&times;&thinsp;{{ "%.4f"|format(b.h_in) }}"</td>
+              <td class="box-pts">{{ "%.2f"|format(b.w_pt) }}&thinsp;&times;&thinsp;{{ "%.2f"|format(b.h_pt) }}&thinsp;pt</td>
+              <td class="box-coords">{{ "%.2f"|format(b.x0) }},&thinsp;{{ "%.2f"|format(b.y0) }}&thinsp;→&thinsp;{{ "%.2f"|format(b.x1) }},&thinsp;{{ "%.2f"|format(b.y1) }}</td>
+              <td>{% if b.explicit %}<span class="box-tag box-tag--explicit">Explicit</span>{% else %}<span class="box-tag box-tag--inherited">= MediaBox</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+    </details>
+  </footer>
+</section>

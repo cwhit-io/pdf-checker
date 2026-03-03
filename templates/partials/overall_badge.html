@@ -1,0 +1,17 @@
+{% if done %}
+{# No hx-* attrs — HTMX stops polling once this replaces the element #}
+<div id="overall-badge" class="overall-badge {{ 'pass' if passed else 'fail' }}">
+  {{ "✓ PASS" if passed else "✗ FAIL" }}
+</div>
+{% else %}
+{# Still running — keep polling #}
+<div
+  id="overall-badge"
+  class="overall-badge checking"
+  hx-get="/check/{{ job_id }}/status"
+  hx-trigger="every 500ms"
+  hx-swap="outerHTML"
+>
+  <span class="badge-spinner"></span> Checking…
+</div>
+{% endif %}

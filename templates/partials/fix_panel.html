@@ -1,0 +1,204 @@
+<!--
+  Fix Panel — always visible after upload.
+  Shows the auto-detected geometry prominently and lets the user
+  download a corrected PDF with TrimBox, BleedBox, CropBox set
+  and optional CMYK conversion.
+-->
+
+{# bleed is always 1/8" #}
+{% set default_bleed_pt = 9.0 %}
+
+<div class="fix-panel" id="fix-panel"
+  data-job-id="{{ job_id }}"
+  data-page-count="{{ page_count }}"
+>
+
+  <!-- ── Canvas size banner ──────────────────────────────────────── -->
+  <div class="fp-banner">
+    <span class="fp-icon">📐</span>
+    <span class="fp-detected-label">
+      Canvas: <strong>{{ "%.3f"|format(pages[0].width_in) }}"&thinsp;&times;&thinsp;{{ "%.3f"|format(pages[0].height_in) }}"</strong>
+    </span>
+    {% if detected_trim.marks_pt > 0.5 %}
+    <span class="fp-marks-note">✂ Crop marks area will be hidden in output</span>
+    {% endif %}
+  </div><!-- /fp-banner -->
+
+
+  <!-- ── Correction form (always visible) ───────────────────────────── -->
+  <div class="fp-form-area" id="fp-form-area">
+
+    <div class="fp-form-body">
+
+      <!-- ── Live preview ── -->
+      <div class="fp-preview-col">
+        <div class="fp-preview-label">Live preview</div>
+        <div class="fp-preview-wrap">
+          <img
+            id="fp-preview-img"
+            class="fp-preview-img"
+            src="/check/{{ job_id }}/preview/1?scale=2.0"
+            alt="Page 1 preview"
+          />
+        </div>
+        <!-- Page navigation -->
+        <div class="fp-page-nav">
+          <button type="button" class="fp-page-btn" id="fp-prev-btn" onclick="fpGoToPage(-1)" disabled aria-label="Previous page">‹</button>
+          <span class="fp-page-counter">
+            Page <span id="fp-page-cur">1</span> of <span id="fp-page-total">{{ page_count }}</span>
+          </span>
+          <button type="button" class="fp-page-btn" id="fp-next-btn" onclick="fpGoToPage(1)" {% if page_count <= 1 %}disabled{% endif %} aria-label="Next page">›</button>
+        </div>
+        <p class="fp-preview-hint">
+          <span style="color:#1e5ad2">▬</span>&nbsp;Trim &nbsp;
+          <span style="color:#dc2828">▬</span>&nbsp;Bleed &nbsp;
+          <span style="color:#b45309">▬</span>&nbsp;Safe zone
+        </p>
+
+        <!-- Geometry summary — updated dynamically by fpUpdatePreview() -->
+        <dl class="fp-geo-summary">
+          <div>
+            <dt>Canvas size</dt>
+            <dd>{{ "%.3f"|format(pages[0].width_in) }}"&thinsp;&times;&thinsp;{{ "%.3f"|format(pages[0].height_in) }}" (unchanged)</dd>
+          </div>
+          <div>
+            <dt>Finished print size</dt>
+            <dd id="fp-geo-trim-val">—</dd>
+          </div>
+          <div>
+            <dt>Bleed area</dt>
+            <dd id="fp-geo-bleed-val">—</dd>
+          </div>
+          {% if detected_trim.marks_pt > 0.5 %}
+          <div>
+            <dt>Crop marks ring</dt>
+            <dd>{{ "%.3f"|format(detected_trim.marks_mm / 25.4) }}" — hidden in output</dd>
+          </div>
+          {% endif %}
+        </dl>
+      </div><!-- /fp-preview-col -->
+
+      <!-- ── Form controls ── -->
+      <div class="fp-controls-col">
+        <p class="fp-form-intro">
+          Confirm your finished print size and bleed amount below. The output PDF
+          will have all print box markers set correctly on every page.
+          Your content is never scaled or cropped.
+        </p>
+
+        <form
+          class="fp-form"
+          action="/check/{{ job_id }}/download-fixed"
+          method="POST"
+          target="_blank"
+          id="fix-download-form"
+        >
+          <div class="fp-fields">
+
+            <!-- Trim size preset -->
+            <div class="fp-field">
+              <label class="fp-label" for="fp-preset-trim">Intended trim size</label>
+              <select
+                class="fp-select"
+                id="fp-preset-trim"
+                name="preset_trim"
+                required
+                onchange="fpUpdatePreview()"
+              >
+                <option value="" disabled selected>Select a size…</option>
+                {% for label, w, h in form_sizes %}
+                <option value="{{ w }},{{ h }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <input type="hidden" name="bleed_pt" value="9">
+
+            <!-- CMYK conversion -->
+            <div class="fp-field fp-field--cmyk">
+              <label class="fp-cmyk-label{% if not gs_available %} fp-cmyk-label--disabled{% endif %}">
+                <input
+                  type="checkbox"
+                  name="convert_cmyk"
+                  value="1"
+                  {% if gs_available and has_rgb %}checked{% endif %}
+                  {% if not gs_available %}disabled{% endif %}
+                />
+                <span class="fp-cmyk-text">Convert RGB → CMYK</span>
+                {% if not gs_available %}
+                  <span class="fp-cmyk-badge fp-cmyk-badge--warn">Ghostscript not found</span>
+                {% elif has_rgb %}
+                  <span class="fp-cmyk-badge fp-cmyk-badge--warn">⚠ RGB detected</span>
+                {% else %}
+                  <span class="fp-cmyk-badge fp-cmyk-badge--ok">✓ CMYK</span>
+                {% endif %}
+              </label>
+            </div>
+
+            <!-- Preflight check rows -->
+            <div class="fp-check-rows">
+              {% for group in groups %}
+              <div class="fp-check-row" id="fp-row-{{ group }}">
+                <span class="fp-check-row-icon">{{ group_icons[group] }}</span>
+                <span class="fp-check-row-label">{{ group_labels[group] }}</span>
+                <span class="fp-check-row-badge fp-check-row-badge--loading" id="fp-badge-{{ group }}">…</span>
+                <button
+                  type="button"
+                  class="fp-check-row-btn"
+                  onclick="openCheckModal('{{ group }}')"
+                  id="fp-details-btn-{{ group }}"
+                >Details</button>
+                <div
+                  class="fp-check-list-hidden"
+                  id="cl-{{ group }}"
+                  hx-get="/check/{{ job_id }}/{{ group }}"
+                  hx-trigger="load"
+                  hx-swap="innerHTML"
+                  hx-on:htmx:after-swap="fpSummarizeRow(this, '{{ group }}')"
+                ></div>
+              </div>
+              {% endfor %}
+            </div>
+
+          </div><!-- /fp-fields -->
+
+          <div class="fp-form-footer">
+            <button type="submit" class="fp-download-btn" id="fp-dl-btn" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Download Fixed PDF
+            </button>
+            <p class="fp-form-note">
+              Your content is never touched — only the invisible print markers are updated.
+            </p>
+          </div>
+
+        </form>
+      </div><!-- /fp-controls-col -->
+
+    </div><!-- /fp-form-body -->
+  </div><!-- /fp-form-area -->
+
+  <!-- ── Preflight check modals ──────────────────────────────── -->
+  {% for group in groups %}
+  <dialog class="check-modal" id="modal-{{ group }}">
+    <div class="check-modal-inner">
+      <div class="check-modal-header">
+        <span class="check-modal-title">{{ group_icons[group] }} {{ group_labels[group] }}</span>
+        <button
+          type="button"
+          class="check-modal-close"
+          onclick="this.closest('dialog').close()"
+          aria-label="Close"
+        >✕</button>
+      </div>
+      <div class="check-modal-body" id="modal-body-{{ group }}"></div>
+    </div>
+  </dialog>
+  {% endfor %}
+
+</div><!-- /fix-panel -->
+<script>document.addEventListener("DOMContentLoaded", function(){ fpUpdatePreview(); });</script>

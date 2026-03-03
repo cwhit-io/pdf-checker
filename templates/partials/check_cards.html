@@ -1,0 +1,9 @@
+{% for check in checks %}
+<div class="check-item" data-status="{{ 'pass' if check.passed else check.severity }}">
+  <div class="check-content">
+    <div class="check-name">{{ check.name }}</div>
+    <div class="check-detail">{{ check.detail }}</div>
+  </div>
+  <span class="check-badge {{ check | badge_class }}">{{ check | badge_label }}</span>
+</div>
+{% endfor %}

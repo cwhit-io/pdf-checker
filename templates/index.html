@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Print Readiness Checker</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>PDF Print Readiness Checker</h1>
+      <p class="subtitle">Upload a PDF to check it's ready to print</p>
+    </header>
+
+    <section class="upload-section">
+      <!--
+        HTMX submits this form as multipart/form-data and swaps
+        the server-rendered results partial into #results-area.
+      -->
+      <form
+        id="uploadForm"
+        hx-post="/check/upload"
+        hx-target="#results-area"
+        hx-swap="innerHTML"
+        hx-encoding="multipart/form-data"
+        hx-indicator="#upload-indicator"
+      >
+        <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="PDF upload area">
+          <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p class="drop-label">Drag &amp; drop a PDF here, or <span class="browse-link">browse</span></p>
+          <p class="drop-hint">PDF files only</p>
+          <input type="file" id="fileInput" name="file" accept=".pdf" hidden />
+        </div>
+
+        <!-- Compact replacement shown after first upload -->
+        <div id="upload-new-wrap" hidden>
+          <button type="button" class="upload-new-btn" onclick="document.getElementById('fileInput').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Upload New PDF
+          </button>
+        </div>
+      </form>
+
+      <!-- Shown by HTMX while the upload+parse request is in-flight -->
+      <div id="upload-indicator" class="spinner htmx-indicator" aria-live="polite">
+        <div class="spinner-ring"></div>
+        <span>Uploading &amp; parsing…</span>
+      </div>
+    </section>
+
+    <!-- HTMX swaps results_container.html (or error.html) in here -->
+    <div id="results-area" aria-live="polite"></div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

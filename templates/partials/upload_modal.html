@@ -1,0 +1,126 @@
+<!--
+  Upload Modal — shown immediately after a PDF is uploaded.
+  Asks the user to confirm the detected trim size before running the full check suite.
+-->
+
+<dialog
+  id="upload-modal"
+  class="upload-modal"
+  aria-labelledby="um-title"
+  aria-modal="true"
+>
+  <div class="um-wrap">
+
+    <!-- ── Header ──────────────────────────────────────────────── -->
+    <div class="um-header">
+      <div class="um-header-left">
+        <span class="um-file-icon">📄</span>
+        <span id="um-title" class="um-filename">{{ filename }}</span>
+        <span class="um-pages">{{ page_count }} page{{ "s" if page_count != 1 else "" }}</span>
+      </div>
+      <button
+        class="um-close-btn"
+        type="button"
+        aria-label="Cancel"
+        onclick="document.getElementById('upload-modal').close()"
+      >✕</button>
+    </div>
+
+    <!-- ── Body ────────────────────────────────────────────────── -->
+    <div class="um-body">
+
+      <!-- Left: live preview -->
+      <div class="um-preview-col">
+        <div class="um-preview-label">Preview — overlays update as you change settings</div>
+        <div class="um-preview-wrap">
+          <img
+            id="um-preview-img"
+            class="um-preview-img"
+            src="/check/{{ job_id }}/preview/1?scale=1.6&ov_trim_w_pt={{ detected_trim.trim_w_pt }}&ov_trim_h_pt={{ detected_trim.trim_h_pt }}&ov_bleed_pt=9"
+            alt="Page 1 preview with trim and bleed overlays"
+          />
+        </div>
+        <div class="um-legend">
+          <span class="um-leg-item"><span class="um-leg-swatch" style="border-color:#1e5ad2"></span>Print size</span>
+          <span class="um-leg-item"><span class="um-leg-swatch" style="border-color:#dc2828"></span>Bleed</span>
+          <span class="um-leg-item"><span class="um-leg-swatch" style="border-color:#b45309"></span>Safe zone</span>
+        </div>
+
+        <!-- Detected size banner -->
+        <div class="um-detected-banner">
+          <span class="um-detected-icon">📐</span>
+          <div>
+            <div class="um-detected-label">Detected size</div>
+            <div class="um-detected-val">
+              <strong>{{ detected_trim.size_name }}</strong>
+              <span class="um-detected-dims">
+                {{ "%.3f"|format(detected_trim.trim_w_in) }}"&thinsp;×&thinsp;{{ "%.3f"|format(detected_trim.trim_h_in) }}"
+              </span>
+            </div>
+          </div>
+        </div>
+      </div><!-- /um-preview-col -->
+
+      <!-- Right: controls -->
+      <div class="um-controls-col">
+
+        <!-- Quick warnings removed — shown in full check results -->
+
+        <!-- Confirm form -->
+        <form
+          class="um-form"
+          id="um-form"
+          hx-post="/check/{{ job_id }}/start-checks"
+          hx-target="#results-area"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          hx-indicator="#upload-indicator"
+          hx-on:htmx:before-request="document.getElementById('upload-modal').close()"
+        >
+
+          <div class="um-fields">
+
+            <!-- Trim size -->
+            <div class="um-field">
+              <label class="um-label" for="um-preset-trim">Finished print size</label>
+              <select
+                class="um-select"
+                id="um-preset-trim"
+                name="preset_trim"
+                onchange="umUpdatePreview('{{ job_id }}')"
+              >
+                {% for label, w, h in form_sizes %}
+                <option
+                  value="{{ w }},{{ h }}"
+                  {% if w == 0 and detected_trim.size_name == "Custom" %}selected
+                  {% elif w > 0 and (w - detected_trim.trim_w_in)|abs < 0.01 and (h - detected_trim.trim_h_in)|abs < 0.01 %}selected
+                  {% elif w > 0 and (w - detected_trim.trim_h_in)|abs < 0.01 and (h - detected_trim.trim_w_in)|abs < 0.01 %}selected
+                  {% endif %}
+                >{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <input type="hidden" name="bleed_pt" value="9">
+
+          </div><!-- /um-fields -->
+
+          <div class="um-footer">
+            <button type="submit" class="um-confirm-btn">
+              Run Full Check
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12"/>
+                <polyline points="12 5 19 12 12 19"/>
+              </svg>
+            </button>
+            <p class="um-footer-hint">
+              You can adjust the size and download a corrected file after checking.
+            </p>
+          </div>
+
+        </form>
+      </div><!-- /um-controls-col -->
+
+    </div><!-- /um-body -->
+  </div><!-- /um-wrap -->
+</dialog>
