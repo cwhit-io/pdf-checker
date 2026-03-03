@@ -178,6 +178,12 @@ body {
     gap: 0.25rem;
 }
 
+.results-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
 .meta-filename {
     font-weight: 700;
     font-size: 1.05rem;

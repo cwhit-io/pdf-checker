@@ -53,13 +53,11 @@
         form.requestSubmit();
     }
 
-    // ── After HTMX swaps in the results, hide dropzone → show compact button ──
+    // ── After HTMX swaps in the results, hide dropzone ──
     document.addEventListener("htmx:afterSwap", (e) => {
         if (e.detail.target.id === "results-area") {
             const dropzone = document.getElementById("dropzone");
-            const uploadNewWrap = document.getElementById("upload-new-wrap");
             if (dropzone) dropzone.hidden = true;
-            if (uploadNewWrap) uploadNewWrap.hidden = false;
             e.detail.target.scrollIntoView({ behavior: "smooth", block: "start" });
         }
     });
