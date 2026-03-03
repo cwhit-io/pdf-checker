@@ -6,18 +6,24 @@ from .checks.models import CheckItem, PageInfo
 
 # Ordered check groups — must match route names
 GROUPS: tuple[str, ...] = (
+    "bleed_trim",
+    "color",
     "images",
     "fonts",
     "safe_zone",
 )
 
 GROUP_LABELS: dict[str, str] = {
+    "bleed_trim": "Trim / Bleed",
+    "color": "Color",
     "images": "Image Resolution",
     "fonts": "Fonts",
     "safe_zone": "Safe Zone",
 }
 
 GROUP_ICONS: dict[str, str] = {
+    "bleed_trim": "✂️",
+    "color": "🎨",
     "images": "🖼️",
     "fonts": "🔤",
     "safe_zone": "📏",

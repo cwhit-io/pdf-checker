@@ -165,6 +165,11 @@ function toggleFixPanel(btn) {
 
 let fpCurrentPage = 1;
 
+function fpOnTrimChanged() {
+    fpUpdatePreview();
+    document.body.dispatchEvent(new CustomEvent("fp-trim-changed"));
+}
+
 function fpGoToPage(delta) {
     const panel = document.getElementById("fix-panel");
     if (!panel) return;
@@ -173,6 +178,47 @@ function fpGoToPage(delta) {
     document.getElementById("fp-page-cur").textContent = fpCurrentPage;
     document.getElementById("fp-prev-btn").disabled = fpCurrentPage === 1;
     document.getElementById("fp-next-btn").disabled = fpCurrentPage === total;
+    fpUpdatePreview();
+}
+
+/** Open the full-size preview zoom dialog. */
+function fpOpenZoom() {
+    const dialog = document.getElementById("fp-zoom-dialog");
+    const panel = document.getElementById("fix-panel");
+    const srcImg = document.getElementById("fp-preview-img");
+    const zoomImg = document.getElementById("fp-zoom-img");
+    if (!dialog || !panel || !srcImg || !zoomImg) return;
+
+    const total = parseInt(panel.dataset.pageCount, 10) || 1;
+    document.getElementById("fp-zoom-cur").textContent = fpCurrentPage;
+    document.getElementById("fp-zoom-total").textContent = total;
+    document.getElementById("fp-zoom-prev").disabled = fpCurrentPage === 1;
+    document.getElementById("fp-zoom-next").disabled = fpCurrentPage === total;
+
+    // Derive zoom src from current preview, bumping scale to 4.0
+    zoomImg.src = srcImg.src.replace(/scale=[0-9.]+/, "scale=4.0");
+
+    if (!dialog.dataset.closeReady) {
+        dialog.dataset.closeReady = "1";
+        dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+    }
+    dialog.showModal();
+}
+
+/** Navigate pages inside the zoom modal (also syncs main panel). */
+function fpZoomPage(delta) {
+    const panel = document.getElementById("fix-panel");
+    if (!panel) return;
+    const total = parseInt(panel.dataset.pageCount, 10) || 1;
+    fpCurrentPage = Math.max(1, Math.min(total, fpCurrentPage + delta));
+    // Sync main panel counters/buttons
+    document.getElementById("fp-page-cur").textContent = fpCurrentPage;
+    document.getElementById("fp-prev-btn").disabled = fpCurrentPage === 1;
+    document.getElementById("fp-next-btn").disabled = fpCurrentPage === total;
+    // Sync zoom counters/buttons
+    document.getElementById("fp-zoom-cur").textContent = fpCurrentPage;
+    document.getElementById("fp-zoom-prev").disabled = fpCurrentPage === 1;
+    document.getElementById("fp-zoom-next").disabled = fpCurrentPage === total;
     fpUpdatePreview();
 }
 
@@ -185,18 +231,24 @@ function fpUpdatePreview() {
 
     const jobId = panel.dataset.jobId;
     const select = document.getElementById("fp-preset-trim");
+    const applyTrim = document.getElementById("fp-apply-trim");
+    const useTrimFix = !applyTrim || applyTrim.checked;
     const img = document.getElementById("fp-preview-img");
     const dlBtn = document.getElementById("fp-dl-btn");
     const trimVal = document.getElementById("fp-geo-trim-val");
     const bleedVal = document.getElementById("fp-geo-bleed-val");
     if (!img) return;
 
-    // No size chosen yet — plain preview, disabled download
-    if (!select.value) {
-        if (dlBtn) dlBtn.disabled = true;
+    // Trim/Bleed fix disabled OR no size selected — plain preview
+    if (!useTrimFix || !select.value) {
+        if (dlBtn) dlBtn.disabled = useTrimFix && !select.value;
         if (trimVal) trimVal.textContent = "—";
-        if (bleedVal) bleedVal.textContent = "—";
-        img.src = `/check/${jobId}/preview/${fpCurrentPage}?scale=2.0`;
+        if (bleedVal) bleedVal.textContent = useTrimFix ? "—" : "Fix disabled";
+        const plainUrl = `/check/${jobId}/preview/${fpCurrentPage}?scale=2.0`;
+        img.src = plainUrl;
+        const zd = document.getElementById("fp-zoom-dialog");
+        const zi = document.getElementById("fp-zoom-img");
+        if (zd && zd.open && zi) zi.src = plainUrl.replace("scale=2.0", "scale=4.0");
         return;
     }
 
@@ -220,6 +272,12 @@ function fpUpdatePreview() {
         img.onload = () => img.classList.remove("loading");
         img.onerror = () => img.classList.remove("loading");
         img.src = url;
+        // Keep zoom modal in sync
+        const zoomDialog = document.getElementById("fp-zoom-dialog");
+        const zoomImg = document.getElementById("fp-zoom-img");
+        if (zoomDialog && zoomDialog.open && zoomImg) {
+            zoomImg.src = url.replace("scale=2.0", "scale=4.0");
+        }
     }, 220);
 
     // Update geometry summary

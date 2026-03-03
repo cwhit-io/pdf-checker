@@ -34,6 +34,14 @@
       <div class="fp-preview-col">
         <div class="fp-preview-label">Live preview</div>
         <div class="fp-preview-wrap">
+          <button type="button" class="fp-expand-btn" aria-label="Enlarge preview" onclick="fpOpenZoom()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="15 3 21 3 21 9"/>
+              <polyline points="9 21 3 21 3 15"/>
+              <line x1="21" y1="3" x2="14" y2="10"/>
+              <line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
           <img
             id="fp-preview-img"
             class="fp-preview-img"
@@ -102,8 +110,7 @@
                 class="fp-select"
                 id="fp-preset-trim"
                 name="preset_trim"
-                required
-                onchange="fpUpdatePreview()"
+                onchange="fpOnTrimChanged()"
               >
                 <option value="" disabled selected>Select a size…</option>
                 {% for label, w, h in form_sizes %}
@@ -114,33 +121,31 @@
 
             <input type="hidden" name="bleed_pt" value="9">
 
-            <!-- CMYK conversion -->
-            <div class="fp-field fp-field--cmyk">
-              <label class="fp-cmyk-label{% if not gs_available %} fp-cmyk-label--disabled{% endif %}">
-                <input
-                  type="checkbox"
-                  name="convert_cmyk"
-                  value="1"
-                  {% if gs_available and has_rgb %}checked{% endif %}
-                  {% if not gs_available %}disabled{% endif %}
-                />
-                <span class="fp-cmyk-text">Convert RGB → CMYK</span>
-                {% if not gs_available %}
-                  <span class="fp-cmyk-badge fp-cmyk-badge--warn">Ghostscript not found</span>
-                {% elif has_rgb %}
-                  <span class="fp-cmyk-badge fp-cmyk-badge--warn">⚠ RGB detected</span>
-                {% else %}
-                  <span class="fp-cmyk-badge fp-cmyk-badge--ok">✓ CMYK</span>
-                {% endif %}
-              </label>
-            </div>
-
             <!-- Preflight check rows -->
             <div class="fp-check-rows">
               {% for group in groups %}
               <div class="fp-check-row" id="fp-row-{{ group }}">
                 <span class="fp-check-row-icon">{{ group_icons[group] }}</span>
                 <span class="fp-check-row-label">{{ group_labels[group] }}</span>
+
+                {% if group == "bleed_trim" %}
+                <label class="fp-row-fix-toggle" title="Apply selected trim and bleed fix when downloading">
+                  <input type="checkbox" id="fp-apply-trim" name="apply_trim_bleed" value="1" checked onchange="fpUpdatePreview()" />
+                  <span>Fix</span>
+                </label>
+                {% elif group == "color" %}
+                <label class="fp-row-fix-toggle{% if not gs_available %} fp-row-fix-toggle--disabled{% endif %}" title="Convert RGB to CMYK in downloaded file">
+                  <input
+                    type="checkbox"
+                    name="convert_cmyk"
+                    value="1"
+                    {% if gs_available and has_rgb %}checked{% endif %}
+                    {% if not gs_available %}disabled{% endif %}
+                  />
+                  <span>Fix</span>
+                </label>
+                {% endif %}
+
                 <span class="fp-check-row-badge fp-check-row-badge--loading" id="fp-badge-{{ group }}">…</span>
                 <button
                   type="button"
@@ -152,7 +157,12 @@
                   class="fp-check-list-hidden"
                   id="cl-{{ group }}"
                   hx-get="/check/{{ job_id }}/{{ group }}"
+                  {% if group == "bleed_trim" %}
+                  hx-include="#fp-preset-trim"
+                  hx-trigger="load, fp-trim-changed from:body"
+                  {% else %}
                   hx-trigger="load"
+                  {% endif %}
                   hx-swap="innerHTML"
                   hx-on:htmx:after-swap="fpSummarizeRow(this, '{{ group }}')"
                 ></div>
@@ -199,6 +209,28 @@
     </div>
   </dialog>
   {% endfor %}
+
+  <!-- ── Preview zoom modal ──────────────────────────────────────────── -->
+  <dialog id="fp-zoom-dialog" class="fp-zoom-dialog">
+    <div class="fp-zoom-inner">
+      <div class="fp-zoom-header">
+        <div class="fp-zoom-nav">
+          <button type="button" class="fp-page-btn" id="fp-zoom-prev" onclick="fpZoomPage(-1)" disabled aria-label="Previous page">‹</button>
+          <span class="fp-page-counter">Page <span id="fp-zoom-cur">1</span> of <span id="fp-zoom-total">{{ page_count }}</span></span>
+          <button type="button" class="fp-page-btn" id="fp-zoom-next" onclick="fpZoomPage(1)" {% if page_count <= 1 %}disabled{% endif %} aria-label="Next page">›</button>
+        </div>
+        <p class="fp-preview-hint" style="margin:0">
+          <span style="color:#1e5ad2">▬</span>&nbsp;Trim &nbsp;
+          <span style="color:#dc2828">▬</span>&nbsp;Bleed &nbsp;
+          <span style="color:#b45309">▬</span>&nbsp;Safe zone
+        </p>
+        <button type="button" class="check-modal-close" onclick="document.getElementById('fp-zoom-dialog').close()" aria-label="Close">✕</button>
+      </div>
+      <div class="fp-zoom-body">
+        <img id="fp-zoom-img" class="fp-zoom-img" src="" alt="Page preview (zoomed)" />
+      </div>
+    </div>
+  </dialog>
 
 </div><!-- /fix-panel -->
 <script>document.addEventListener("DOMContentLoaded", function(){ fpUpdatePreview(); });</script>

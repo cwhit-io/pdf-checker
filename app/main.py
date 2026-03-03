@@ -1,4 +1,5 @@
 import io
+import math
 
 import fitz  # PyMuPDF
 from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException, Query
@@ -94,8 +95,11 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     job_id = create_job(file.filename, contents, doc.page_count, pages, detected_trim)
 
     confirmed_trim = build_confirmed_trim(
-        detected_trim["trim_w_pt"], detected_trim["trim_h_pt"],
-        BLEED_PT, pages[0].width_pt, pages[0].height_pt,
+        detected_trim["trim_w_pt"],
+        detected_trim["trim_h_pt"],
+        BLEED_PT,
+        pages[0].width_pt,
+        pages[0].height_pt,
     )
     update_job_trim(job_id, confirmed_trim)
 
@@ -126,10 +130,14 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 
 
 @app.get("/check/{job_id}/bleed_trim", response_class=HTMLResponse)
-async def run_bleed_trim(request: Request, job_id: str):
+async def run_bleed_trim(
+    request: Request,
+    job_id: str,
+    preset_trim: str = Query(default=""),
+):
     job = _require_job(job_id)
     doc = load_pdf_from_bytes(job.pdf_bytes)
-    checks = check_bleed_trim(doc)
+    checks = check_bleed_trim(doc, preset_trim=preset_trim)
     store_results(job_id, "bleed_trim", checks)
     return _cards(request, checks)
 
@@ -179,26 +187,36 @@ async def download_fixed_pdf(
     preset_trim: str = Form(default="0,0"),
     trim_w_in: float = Form(default=0.0),
     trim_h_in: float = Form(default=0.0),
+    apply_trim_bleed: str = Form(default=""),
     convert_cmyk: str = Form(default=""),
 ):
-    bleed_pt = BLEED_PT
     job = _require_job(job_id)
+    use_trim_fix = apply_trim_bleed == "1"
 
-    # Resolve trim dimensions
-    try:
-        pw_str, ph_str = preset_trim.split(",", 1)
-        pw, ph = float(pw_str), float(ph_str)
-    except Exception:
-        pw, ph = 0.0, 0.0
-
-    if pw > 0 and ph > 0:
-        tw_pt = pw * 72
-        th_pt = ph * 72
-    elif trim_w_in > 0 and trim_h_in > 0:
-        tw_pt = trim_w_in * 72
-        th_pt = trim_h_in * 72
+    if use_trim_fix:
+        bleed_pt = BLEED_PT
     else:
-        # Fall back to job's detected trim
+        bleed_pt = float(job.detected_trim.get("bleed_pt", 0.0) or 0.0)
+
+    if use_trim_fix:
+        # Resolve requested trim dimensions
+        try:
+            pw_str, ph_str = preset_trim.split(",", 1)
+            pw, ph = float(pw_str), float(ph_str)
+        except Exception:
+            pw, ph = 0.0, 0.0
+
+        if pw > 0 and ph > 0:
+            tw_pt = pw * 72
+            th_pt = ph * 72
+        elif trim_w_in > 0 and trim_h_in > 0:
+            tw_pt = trim_w_in * 72
+            th_pt = trim_h_in * 72
+        else:
+            tw_pt = job.detected_trim.get("trim_w_pt", job.pages[0].width_pt)
+            th_pt = job.detected_trim.get("trim_h_pt", job.pages[0].height_pt)
+    else:
+        # Preserve detected/native trim when fix toggle is off
         tw_pt = job.detected_trim.get("trim_w_pt", job.pages[0].width_pt)
         th_pt = job.detected_trim.get("trim_h_pt", job.pages[0].height_pt)
 
@@ -227,7 +245,7 @@ async def download_fixed_pdf(
 async def get_page_preview(
     job_id: str,
     page_num: int,
-    scale: float = Query(default=0.35, ge=0.1, le=4.0),
+    scale: float = Query(default=0.35, ge=0.1, le=6.0),
     ov_trim_w_pt: float = Query(default=0.0),
     ov_trim_h_pt: float = Query(default=0.0),
     ov_bleed_pt: float = Query(default=-1.0),
@@ -258,12 +276,9 @@ async def get_page_preview(
         buf.seek(0)
         return Response(content=buf.read(), media_type="image/jpeg")
 
-    overlay_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay_img)
-
     media = page.mediabox
 
-    # ── Resolve trim & bleed rectangles ───────────────────────────────
+    # ── Resolve trim & bleed rectangles ─────────────────────────────
     # If the caller supplies explicit override dimensions use compute_boxes
     # (the centered-content algorithm); otherwise fall back to infer_page_bleed
     # which reads the PDF’s own box metadata.
@@ -288,16 +303,34 @@ async def get_page_preview(
     # ref rect: trim line (or full media if no trim detected)
     ref = trim_rect if trim_rect is not None else media
 
+    # ── Expand canvas when trim+bleed extends outside the media box ──
+    pad_l = pad_t = pad_r = pad_b = 0
+    if bleed_rect is not None:
+        pad_l = max(0, math.ceil((media.x0 - bleed_rect.x0) * scale))
+        pad_t = max(0, math.ceil((media.y0 - bleed_rect.y0) * scale))
+        pad_r = max(0, math.ceil((bleed_rect.x1 - media.x1) * scale))
+        pad_b = max(0, math.ceil((bleed_rect.y1 - media.y1) * scale))
+
+    if pad_l or pad_t or pad_r or pad_b:
+        new_w = img.width + pad_l + pad_r
+        new_h = img.height + pad_t + pad_b
+        expanded = Image.new("RGBA", (new_w, new_h), (215, 215, 222, 255))
+        expanded.paste(img, (pad_l, pad_t))
+        img = expanded
+
+    overlay_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay_img)
+
     def to_px(rect: fitz.Rect):
         return (
-            (rect.x0 - media.x0) * scale,
-            (rect.y0 - media.y0) * scale,
-            (rect.x1 - media.x0) * scale,
-            (rect.y1 - media.y0) * scale,
+            (rect.x0 - media.x0) * scale + pad_l,
+            (rect.y0 - media.y0) * scale + pad_t,
+            (rect.x1 - media.x0) * scale + pad_l,
+            (rect.y1 - media.y0) * scale + pad_t,
         )
 
-    lw = max(2, round(scale * 2))
     # Implied-bleed overlays are slightly more transparent to signal uncertainty
+    lw = max(2, round(scale * 2))
     bleed_fill_a = 60 if is_implied else 90
     bleed_line_a = 170 if is_implied else 230
 

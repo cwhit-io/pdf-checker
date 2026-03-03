@@ -11,17 +11,21 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #f0f2f5;
+    background:
+        radial-gradient(circle at top left, #eef2ff 0%, rgba(238, 242, 255, 0) 38%),
+        radial-gradient(circle at top right, #ede9fe 0%, rgba(237, 233, 254, 0) 42%),
+        #f8fafc;
     color: #1a1a2e;
     min-height: 100vh;
-    padding: 2rem 1rem;
+    padding: 2.25rem 1rem;
+    line-height: 1.45;
 }
 
 /* ============================================================
    Layout
    ============================================================ */
 .container {
-    max-width: 860px;
+    max-width: 1020px;
     margin: 0 auto;
 }
 
@@ -30,19 +34,22 @@ body {
    ============================================================ */
 .header {
     text-align: center;
-    margin-bottom: 2.5rem;
+    margin-bottom: 2rem;
 }
 
 .header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #1a1a2e;
-    letter-spacing: -0.5px;
+    font-size: clamp(2rem, 3.1vw, 2.35rem);
+    font-weight: 800;
+    background: linear-gradient(120deg, #312e81 0%, #4f46e5 55%, #6366f1 100%);
+    color: transparent;
+    -webkit-background-clip: text;
+    background-clip: text;
+    letter-spacing: -0.03em;
 }
 
 .subtitle {
-    margin-top: 0.5rem;
-    color: #555;
+    margin-top: 0.45rem;
+    color: #64748b;
     font-size: 1rem;
 }
 
@@ -50,37 +57,45 @@ body {
    Upload / Dropzone
    ============================================================ */
 .upload-section {
-    margin-bottom: 2rem;
+    margin-bottom: 1.35rem;
+    background: #ffffffcc;
+    backdrop-filter: blur(4px);
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1rem;
+    box-shadow: 0 14px 38px rgba(15, 23, 42, 0.08);
 }
 
 .upload-new-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.45rem 1rem;
+    padding: 0.5rem 1rem;
     background: #fff;
     color: #4f46e5;
     border: 1.5px solid #c7d2fe;
-    border-radius: 7px;
-    font-size: 0.82rem;
-    font-weight: 600;
+    border-radius: 10px;
+    font-size: 0.8rem;
+    font-weight: 700;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.15);
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
 .upload-new-btn:hover {
     background: #f5f3ff;
     border-color: #818cf8;
+    transform: translateY(-1px);
 }
 
 .dropzone {
-    border: 2px dashed #a0aec0;
-    border-radius: 12px;
+    border: 2px dashed #a5b4fc;
+    border-radius: 14px;
     background: #fff;
-    padding: 3rem 2rem;
+    padding: 3.2rem 2rem;
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
     outline: none;
 }
 
@@ -89,6 +104,7 @@ body {
 .dropzone.drag-over {
     border-color: #4f46e5;
     background: #f5f3ff;
+    transform: translateY(-1px);
 }
 
 .upload-icon {
@@ -157,19 +173,23 @@ body {
    Results
    ============================================================ */
 .results {
-    background: #fff;
-    border-radius: 12px;
-    padding: 1.75rem;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    background: #ffffffd9;
+    backdrop-filter: blur(6px);
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1.45rem;
+    box-shadow: 0 22px 45px rgba(15, 23, 42, 0.1);
 }
 
 .results-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.25rem;
     flex-wrap: wrap;
     gap: 0.75rem;
+    padding-bottom: 0.95rem;
+    border-bottom: 1px solid #e2e8f0;
 }
 
 .results-meta {
@@ -185,9 +205,10 @@ body {
 }
 
 .meta-filename {
-    font-weight: 700;
-    font-size: 1.05rem;
+    font-weight: 800;
+    font-size: 1.08rem;
     word-break: break-all;
+    color: #1e293b;
 }
 
 .meta-pages {
@@ -240,16 +261,22 @@ body {
 .checks-sections {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.75rem;
     margin-bottom: 1.5rem;
 }
 
 .check-section {
     border: 1px solid #e2e8f0;
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
     background: #fff;
-    transition: border-color 0.15s;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+
+.check-section:hover {
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    transform: translateY(-1px);
 }
 
 .check-section.has-issues {
@@ -269,7 +296,7 @@ body {
     align-items: center;
     gap: 0.6rem;
     width: 100%;
-    padding: 0.75rem 1rem;
+    padding: 0.82rem 1rem;
     background: #f8fafc;
     border-bottom: 1px solid #e2e8f0;
     cursor: pointer;
@@ -440,7 +467,7 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.75rem 1rem;
+    padding: 0.8rem 1rem;
     border-bottom: 1px solid #f1f5f9;
 }
 
@@ -508,8 +535,8 @@ body {
 }
 
 .check-name {
-    font-weight: 600;
-    font-size: 0.9rem;
+    font-weight: 700;
+    font-size: 0.92rem;
 }
 
 .check-detail {
@@ -1230,10 +1257,11 @@ body {
 
 .fix-panel {
     border: 1.5px solid #c7d2fe;
-    border-radius: 10px;
-    background: #f5f3ff;
+    border-radius: 14px;
+    background: #fff;
     margin-bottom: 1.5rem;
     overflow: hidden;
+    box-shadow: 0 16px 34px rgba(79, 70, 229, 0.12);
 }
 
 /* ── Banner (always visible) ── */
@@ -1241,9 +1269,10 @@ body {
     display: flex;
     align-items: center;
     gap: 0.55rem;
-    padding: 0.75rem 1.1rem;
+    padding: 0.82rem 1.1rem;
     flex-wrap: wrap;
     border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(120deg, #f5f3ff 0%, #eef2ff 100%);
 }
 
 .fp-marks-note {
@@ -1464,6 +1493,7 @@ body {
     grid-template-columns: auto 1fr;
     gap: 0;
     border-top: 1.5px solid #c7d2fe;
+    background: #fff;
 }
 
 @media (max-width: 640px) {
@@ -1478,7 +1508,7 @@ body {
     flex-direction: column;
     align-items: center;
     gap: 0.5rem;
-    padding: 1rem;
+    padding: 1.05rem;
     background: #f8fafc;
     border-right: 1.5px solid #c7d2fe;
     min-width: 0;
@@ -1503,13 +1533,94 @@ body {
 .fp-preview-wrap {
     position: relative;
     background: #e2e8f0;
-    border-radius: 4px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
     min-width: 80px;
     min-height: 80px;
+}
+
+.fp-expand-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1.5px solid #c7d2fe;
+    border-radius: 5px;
+    padding: 0.28rem 0.32rem;
+    cursor: pointer;
+    color: #4f46e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.fp-expand-btn:hover {
+    background: #f5f3ff;
+    border-color: #818cf8;
+}
+
+/* ── Preview zoom dialog ─────────────────────────────────────── */
+.fp-zoom-dialog {
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    max-width: min(92vw, 1100px);
+    max-height: 92vh;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    margin: auto;
+}
+
+.fp-zoom-dialog::backdrop {
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(3px);
+}
+
+.fp-zoom-inner {
+    display: flex;
+    flex-direction: column;
+    max-height: 92vh;
+    overflow: hidden;
+}
+
+.fp-zoom-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    flex-shrink: 0;
+}
+
+.fp-zoom-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fp-zoom-body {
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    background: #dde1ea;
+    padding: 1.25rem;
+    flex: 1;
+}
+
+.fp-zoom-img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
 }
 
 .fp-preview-img {
@@ -1637,9 +1748,9 @@ body {
 
 .fp-select,
 .fp-input {
-    padding: 0.45rem 0.6rem;
+    padding: 0.52rem 0.68rem;
     border: 1.5px solid #d1d5db;
-    border-radius: 6px;
+    border-radius: 9px;
     font-size: 0.83rem;
     color: #1a1a2e;
     background: #fff;
@@ -1723,19 +1834,21 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.6rem 1.25rem;
+    padding: 0.68rem 1.28rem;
     background: #16a34a;
     color: #fff;
     border: none;
-    border-radius: 7px;
+    border-radius: 10px;
     font-size: 0.88rem;
     font-weight: 700;
     cursor: pointer;
-    transition: background 0.15s, transform 0.1s;
+    box-shadow: 0 8px 18px rgba(22, 163, 74, 0.25);
+    transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
 }
 
 .fp-download-btn:hover {
     background: #15803d;
+    box-shadow: 0 12px 22px rgba(21, 128, 61, 0.28);
 }
 
 .fp-download-btn:active {
@@ -1789,6 +1902,32 @@ body {
     font-size: 0.8rem;
     font-weight: 600;
     color: #374151;
+}
+
+.fp-row-fix-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 999px;
+    background: #fff;
+    padding: 0.12rem 0.5rem;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.fp-row-fix-toggle input[type="checkbox"] {
+    width: 0.86rem;
+    height: 0.86rem;
+    accent-color: #4f46e5;
+    cursor: pointer;
+}
+
+.fp-row-fix-toggle--disabled {
+    opacity: 0.55;
 }
 
 .fp-check-row-badge {

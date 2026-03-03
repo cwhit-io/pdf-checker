@@ -9,16 +9,38 @@ import fitz  # PyMuPDF
 from typing import List
 from .models import CheckItem
 from .geometry import (
-    infer_page_bleed,
     _rect_approx_equal,
-    _classify,
     BLEED_REQUIRED_PT,
-    STANDARD_SIZES_PT,
-    INFER_TOL_PT,
 )
 
 
-def check_bleed_trim(doc: fitz.Document) -> List[CheckItem]:
+SIZE_TOL_PT = 1.5
+BLEED_TOL_PT = 1.0
+
+
+def _parse_preset_trim(preset_trim: str) -> tuple[float, float] | None:
+    if not preset_trim:
+        return None
+    try:
+        w_str, h_str = preset_trim.split(",", 1)
+        w_in = float(w_str)
+        h_in = float(h_str)
+        if w_in > 0 and h_in > 0:
+            return w_in * 72.0, h_in * 72.0
+    except Exception:
+        return None
+    return None
+
+
+def _dims_match(rect: fitz.Rect, target_w_pt: float, target_h_pt: float) -> bool:
+    w = rect.width
+    h = rect.height
+    return (
+        abs(w - target_w_pt) <= SIZE_TOL_PT and abs(h - target_h_pt) <= SIZE_TOL_PT
+    ) or (abs(w - target_h_pt) <= SIZE_TOL_PT and abs(h - target_w_pt) <= SIZE_TOL_PT)
+
+
+def check_bleed_trim(doc: fitz.Document, preset_trim: str = "") -> List[CheckItem]:
     checks: List[CheckItem] = []
 
     if doc.page_count == 0:
@@ -32,108 +54,119 @@ def check_bleed_trim(doc: fitz.Document) -> List[CheckItem]:
         )
         return checks
 
-    # ── Page dimensions & trim size ──────────────────────────────
-    # Collect unique page sizes and identify whether they match a known trim size
-    size_summaries: list[str] = []
-    sizes_seen: set[tuple[float, float]] = set()
-
-    for i, page in enumerate(doc):
-        w = round(page.mediabox.width, 1)
-        h = round(page.mediabox.height, 1)
-        key = (min(w, h), max(w, h))
-        if key in sizes_seen:
-            continue
-        sizes_seen.add(key)
-
-        bleed_info = infer_page_bleed(page)
-
-        # Is this an exact standard size?
-        exact_match = next(
-            (
-                name
-                for name, (sw, sh) in STANDARD_SIZES_PT.items()
-                if (abs(w - sw) < 2 and abs(h - sh) < 2)
-                or (abs(w - sh) < 2 and abs(h - sw) < 2)
-            ),
-            None,
-        )
-
-        if exact_match:
-            size_summaries.append(f'{w / 72:.3f}"×{h / 72:.3f}" ({exact_match})')
-        elif bleed_info and bleed_info["source"] == "implied":
-            b_mm = bleed_info["bleed_pt"] / 72 * 25.4
-            b_in = bleed_info["bleed_pt"] / 72
-            size_summaries.append(
-                f'{w / 72:.3f}"×{h / 72:.3f}" '
-                f'({bleed_info["size_name"]} + {b_in:.3f}" bleed)'
+    target = _parse_preset_trim(preset_trim)
+    if target is None:
+        checks.append(
+            CheckItem(
+                name="Destination Size Selected",
+                passed=False,
+                detail="Select an intended trim size to validate Trim/Crop and BleedBox (.125 in).",
+                severity="warning",
             )
-        else:
-            size_summaries.append(f'{w / 72:.3f}"×{h / 72:.3f}" (non-standard size)')
+        )
+        return checks
 
-    mixed = len(sizes_seen) > 1
+    target_w_pt, target_h_pt = target
     checks.append(
         CheckItem(
-            name="Page / Trim Size",
-            passed=not mixed,
-            detail="; ".join(size_summaries[:6]),
-            severity="warning" if mixed else "info",
+            name="Destination Size Selected",
+            passed=True,
+            detail=f'Target trim: {target_w_pt / 72:.3f}" × {target_h_pt / 72:.3f}"',
+            severity="info",
         )
     )
 
-    # ── Bleed presence ───────────────────────────────────────────
-    pages_explicit_bleed = 0
-    pages_implied_bleed = 0
-    pages_no_bleed: list[int] = []
-    insufficient_bleed: list[str] = []
-    implied_details: list[str] = []
+    pages_missing_trim_crop: list[int] = []
+    pages_wrong_trim_crop: list[str] = []
+    pages_missing_bleed: list[int] = []
+    pages_wrong_bleed: list[str] = []
 
     for i, page in enumerate(doc):
-        info = infer_page_bleed(page)
-        if info is None:
-            pages_no_bleed.append(i + 1)
-            continue
-        if info["source"] == "explicit":
-            pages_explicit_bleed += 1
+        page_num = i + 1
+        media = page.mediabox
+
+        trim_box = page.trimbox
+        has_trim = trim_box is not None and not _rect_approx_equal(trim_box, media)
+
+        crop_box = page.cropbox
+        has_crop = crop_box is not None and not _rect_approx_equal(crop_box, media)
+
+        if has_trim:
+            ref_box = trim_box
+        elif has_crop:
+            ref_box = crop_box
         else:
-            pages_implied_bleed += 1
-            b_mm = info["bleed_pt"] / 72 * 25.4
-            implied_details.append(
-                f"p{i + 1}: {info['size_name']} + {b_mm:.2f} mm (detected)"
+            pages_missing_trim_crop.append(page_num)
+            continue
+
+        if not _dims_match(ref_box, target_w_pt, target_h_pt):
+            pages_wrong_trim_crop.append(
+                f'p{page_num}: {ref_box.width / 72:.3f}"×{ref_box.height / 72:.3f}"'
             )
-        # Check bleed amount for both explicit and implied
-        if info["bleed_pt"] < BLEED_REQUIRED_PT:
-            b_mm = info["bleed_pt"] / 72 * 25.4
-            insufficient_bleed.append(f"p{i + 1}: {b_mm:.2f} mm")
 
-    total_with_bleed = pages_explicit_bleed + pages_implied_bleed
+        bleed_box = page.bleedbox
+        has_bleed = bleed_box is not None and not _rect_approx_equal(bleed_box, media)
+        if not has_bleed:
+            pages_missing_bleed.append(page_num)
+            continue
 
-    if pages_no_bleed and total_with_bleed == 0:
-        bleed_passed = False
-        bleed_detail = (
-            'No bleed detected. For full-bleed designs, add at least \u215b" (3 mm) of bleed '
-            "and set the bleed and trim markers in your design file."
+        sides = (
+            ref_box.x0 - bleed_box.x0,
+            ref_box.y0 - bleed_box.y0,
+            bleed_box.x1 - ref_box.x1,
+            bleed_box.y1 - ref_box.y1,
         )
-        bleed_severity = "warning"
-    elif pages_explicit_bleed == doc.page_count:
-        bleed_passed = True
-        bleed_detail = f"Bleed area set on all {doc.page_count} page(s)"
-        bleed_severity = "info"
-    elif pages_explicit_bleed > 0:
-        bleed_passed = False
-        bleed_detail = (
-            f"Bleed area found on {pages_explicit_bleed}/{doc.page_count} page(s); "
-            f"missing on {len(pages_no_bleed)} page(s)"
+        if any(side <= 0 for side in sides):
+            pages_wrong_bleed.append(f"p{page_num}: BleedBox not outside Trim/Crop")
+            continue
+
+        min_bleed = min(sides)
+        if abs(min_bleed - BLEED_REQUIRED_PT) > BLEED_TOL_PT:
+            pages_wrong_bleed.append(f'p{page_num}: {min_bleed / 72:.3f}" bleed')
+
+    failures = (
+        len(pages_missing_trim_crop)
+        + len(pages_wrong_trim_crop)
+        + len(pages_missing_bleed)
+        + len(pages_wrong_bleed)
+    )
+
+    if failures == 0:
+        checks.append(
+            CheckItem(
+                name="Trim / Bleed Matches Destination",
+                passed=True,
+                detail=(
+                    f"All {doc.page_count} page(s): Trim/Crop matches selected size and "
+                    f'BleedBox is .125" per side'
+                ),
+                severity="info",
+            )
         )
-        bleed_severity = "warning"
     else:
-        # Only implied bleed
-        bleed_passed = False
-        bleed_detail = (
-            "Bleed space found in page dimensions, but bleed and trim markers aren't set in the PDF — "
-            + "; ".join(implied_details[:3])
-        )
-        bleed_severity = "info"
+        detail_parts: list[str] = []
+        if pages_missing_trim_crop:
+            detail_parts.append(
+                "missing Trim/Crop on "
+                + ", ".join(f"p{p}" for p in pages_missing_trim_crop[:6])
+            )
+        if pages_wrong_trim_crop:
+            detail_parts.append("size mismatch " + "; ".join(pages_wrong_trim_crop[:4]))
+        if pages_missing_bleed:
+            detail_parts.append(
+                "missing BleedBox on "
+                + ", ".join(f"p{p}" for p in pages_missing_bleed[:6])
+            )
+        if pages_wrong_bleed:
+            detail_parts.append("bleed mismatch " + "; ".join(pages_wrong_bleed[:4]))
 
-    # Bleed, BleedBox and TrimBox warnings are resolved by Download Fixed PDF.
+        checks.append(
+            CheckItem(
+                name="Trim / Bleed Matches Destination",
+                passed=False,
+                detail="; ".join(detail_parts),
+                severity="warning",
+            )
+        )
 
     return checks
