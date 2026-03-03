@@ -309,12 +309,13 @@ def compute_boxes(
         if margin_x_rot >= 0 and margin_y_rot >= 0:
             trim_w_pt, trim_h_pt = trim_h_pt, trim_w_pt
             margin_x, margin_y = margin_x_rot, margin_y_rot
+            actual_bleed = min(bleed_pt, margin_x, margin_y)
         else:
-            # Still doesn't fit in either orientation — clamp to media
-            trim_rect = fitz.Rect(media.x0, media.y0, media.x1, media.y1)
-            return trim_rect, trim_rect, trim_rect
-
-    actual_bleed = min(bleed_pt, margin_x, margin_y)
+            # Trim is larger than media in all orientations — allow boxes outside media.
+            # set_pdf_boxes will expand the MediaBox via _expand_and_center.
+            actual_bleed = bleed_pt
+    else:
+        actual_bleed = min(bleed_pt, margin_x, margin_y)
 
     trim_rect = fitz.Rect(
         media.x0 + margin_x,
@@ -333,6 +334,45 @@ def compute_boxes(
     return trim_rect, bleed_rect, trim_rect
 
 
+def _expand_and_center(
+    doc: fitz.Document,
+    trim_w_pt: float,
+    trim_h_pt: float,
+    bleed_pt: float,
+) -> fitz.Document:
+    """
+    Return a new Document where each page has been expanded to (trim + 2*bleed),
+    with the original content centered on the new canvas.
+    Used when the requested trim size is larger than the original MediaBox.
+    """
+    new_doc = fitz.open()
+    for i in range(len(doc)):
+        page = doc[i]
+        old_w = page.rect.width
+        old_h = page.rect.height
+
+        # Match the same orientation-swap logic as compute_boxes
+        tw, th = trim_w_pt, trim_h_pt
+        mx = (old_w - tw) / 2
+        my = (old_h - th) / 2
+        if mx < 0 or my < 0:
+            mx_r = (old_w - th) / 2
+            my_r = (old_h - tw) / 2
+            if mx_r >= 0 and my_r >= 0:
+                tw, th = th, tw
+
+        new_w = tw + 2 * bleed_pt
+        new_h = th + 2 * bleed_pt
+        offset_x = (new_w - old_w) / 2
+        offset_y = (new_h - old_h) / 2
+
+        new_page = new_doc.new_page(width=new_w, height=new_h)
+        dest = fitz.Rect(offset_x, offset_y, offset_x + old_w, offset_y + old_h)
+        new_page.show_pdf_page(dest, doc, i)
+
+    return new_doc
+
+
 def set_pdf_boxes(
     pdf_bytes: bytes,
     trim_w_pt: float,
@@ -347,22 +387,56 @@ def set_pdf_boxes(
       - BleedBox = trim + bleed per side — bleed guides in Illustrator/Acrobat
       - CropBox  = TrimBox              — Illustrator artboard / viewer crop
 
-    MediaBox is never modified (preserves all content bytes).
+    When the selected trim is larger than the original MediaBox, the page is
+    first expanded via _expand_and_center so the content fits within the new canvas.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    # Detect whether any page needs MediaBox expansion
+    needs_expansion = False
     for page in doc:
-        trim_rect, bleed_rect, crop_rect = compute_boxes(
-            page.mediabox, trim_w_pt, trim_h_pt, bleed_pt
-        )
-        page.set_trimbox(trim_rect)
-        page.set_bleedbox(bleed_rect)
-        # Write CropBox directly into the page dictionary to avoid PyMuPDF's
-        # coordinate-system side-effects from the high-level set_cropbox() call.
-        page.parent.xref_set_key(
-            page.xref,
-            "CropBox",
-            f"[{crop_rect.x0} {crop_rect.y0} {crop_rect.x1} {crop_rect.y1}]",
-        )
+        media = page.mediabox
+        mx = (media.width - trim_w_pt) / 2
+        my = (media.height - trim_h_pt) / 2
+        if mx < 0 or my < 0:
+            mx_r = (media.width - trim_h_pt) / 2
+            my_r = (media.height - trim_w_pt) / 2
+            if not (mx_r >= 0 and my_r >= 0):
+                needs_expansion = True
+                break
+
+    if needs_expansion:
+        doc = _expand_and_center(doc, trim_w_pt, trim_h_pt, bleed_pt)
+        for page in doc:
+            media = page.mediabox
+            # Expanded page dims = trim + 2*bleed; trim sits at (bleed, bleed)
+            pg_tw = round(media.width - 2 * bleed_pt, 4)
+            pg_th = round(media.height - 2 * bleed_pt, 4)
+            trim_rect = fitz.Rect(
+                bleed_pt, bleed_pt, bleed_pt + pg_tw, bleed_pt + pg_th
+            )
+            bleed_rect = fitz.Rect(0, 0, media.width, media.height)
+            page.set_trimbox(trim_rect)
+            page.set_bleedbox(bleed_rect)
+            page.parent.xref_set_key(
+                page.xref,
+                "CropBox",
+                f"[{trim_rect.x0} {trim_rect.y0} {trim_rect.x1} {trim_rect.y1}]",
+            )
+    else:
+        for page in doc:
+            trim_rect, bleed_rect, crop_rect = compute_boxes(
+                page.mediabox, trim_w_pt, trim_h_pt, bleed_pt
+            )
+            page.set_trimbox(trim_rect)
+            page.set_bleedbox(bleed_rect)
+            # Write CropBox directly into the page dictionary to avoid PyMuPDF's
+            # coordinate-system side-effects from the high-level set_cropbox() call.
+            page.parent.xref_set_key(
+                page.xref,
+                "CropBox",
+                f"[{crop_rect.x0} {crop_rect.y0} {crop_rect.x1} {crop_rect.y1}]",
+            )
 
     buf = io.BytesIO()
     doc.save(buf, garbage=4, deflate=True)
