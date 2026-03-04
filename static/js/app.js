@@ -253,11 +253,29 @@ function fpUpdatePreview() {
     }
 
     const [sw, sh] = select.value.split(",").map(Number);
-    const wIn = sw > 0 ? sw : 0;
-    const hIn = sh > 0 ? sh : 0;
+
+    // Auto-orient: preset sizes are listed in landscape order (e.g. "3.5,2.0").
+    // If the canvas is portrait (h > w) but the preset is landscape, swap so
+    // the trim matches the actual canvas orientation.
+    const canvasWPt = parseFloat(panel.dataset.canvasWPt) || 0;
+    const canvasHPt = parseFloat(panel.dataset.canvasHPt) || 0;
+    const canvasIsPortrait = canvasHPt > canvasWPt + 1; // +1 pt tolerance for square
+    const presetIsPortrait = sh > sw + 0.001;
+    let wIn = sw > 0 ? sw : 0;
+    let hIn = sh > 0 ? sh : 0;
+    if (canvasWPt > 0 && canvasIsPortrait !== presetIsPortrait) {
+        [wIn, hIn] = [hIn, wIn];
+    }
+
     const trimWPt = wIn * 72;
     const trimHPt = hIn * 72;
-    const bleedPt = 9.0;
+    const requestedBleedPt = 9.0;
+
+    // Compute actual bleed: capped by the available margin on each axis so we
+    // never claim more bleed than the canvas can provide.
+    const marginX = canvasWPt > 0 ? (canvasWPt - trimWPt) / 2 : requestedBleedPt;
+    const marginY = canvasHPt > 0 ? (canvasHPt - trimHPt) / 2 : requestedBleedPt;
+    const actualBleedPt = Math.min(requestedBleedPt, Math.max(0, marginX), Math.max(0, marginY));
 
     if (dlBtn) dlBtn.disabled = false;
 
@@ -267,7 +285,7 @@ function fpUpdatePreview() {
         const url = `/check/${jobId}/preview/${fpCurrentPage}?scale=2.0` +
             `&ov_trim_w_pt=${trimWPt.toFixed(2)}` +
             `&ov_trim_h_pt=${trimHPt.toFixed(2)}` +
-            `&ov_bleed_pt=${bleedPt.toFixed(3)}`;
+            `&ov_bleed_pt=${actualBleedPt.toFixed(3)}`;
         img.classList.add("loading");
         img.onload = () => img.classList.remove("loading");
         img.onerror = () => img.classList.remove("loading");
@@ -284,11 +302,13 @@ function fpUpdatePreview() {
     if (trimVal) {
         trimVal.textContent = `${wIn.toFixed(3)}" × ${hIn.toFixed(3)}" — centered`;
     }
-    if (bleedVal && bleedPt > 0.5) {
-        const bleedIn = (bleedPt / 72).toFixed(3);
-        bleedVal.textContent = `trim + ${bleedIn}" per side`;
-    } else if (bleedVal) {
-        bleedVal.textContent = "= TrimBox (no bleed)";
+    if (bleedVal) {
+        if (actualBleedPt > 0.5) {
+            const bleedIn = (actualBleedPt / 72).toFixed(3);
+            bleedVal.textContent = `trim + ${bleedIn}" per side`;
+        } else {
+            bleedVal.textContent = "No bleed margin — canvas = trim size";
+        }
     }
 }
 
@@ -305,11 +325,23 @@ function umUpdatePreview(jobId) {
     if (!select) return;
 
     const [sw, sh] = select.value.split(",").map(Number);
-    const wIn = sw > 0 ? sw : 0;
-    const hIn = sh > 0 ? sh : 0;
+
+    // Auto-orient: same logic as fpUpdatePreview — swap trim to match canvas.
+    const dialog = document.getElementById("upload-modal");
+    const canvasWPt = dialog ? (parseFloat(dialog.dataset.canvasWPt) || 0) : 0;
+    const canvasHPt = dialog ? (parseFloat(dialog.dataset.canvasHPt) || 0) : 0;
+    const canvasIsPortrait = canvasHPt > canvasWPt + 1;
+    const presetIsPortrait = sh > sw + 0.001;
+    let wIn = sw > 0 ? sw : 0;
+    let hIn = sh > 0 ? sh : 0;
+    if (canvasWPt > 0 && canvasIsPortrait !== presetIsPortrait) {
+        [wIn, hIn] = [hIn, wIn];
+    }
     const trimWPt = wIn * 72;
     const trimHPt = hIn * 72;
-    const bleedPt = 9.0;
+    const marginX = canvasWPt > 0 ? (canvasWPt - trimWPt) / 2 : 9;
+    const marginY = canvasHPt > 0 ? (canvasHPt - trimHPt) / 2 : 9;
+    const bleedPt = Math.min(9.0, Math.max(0, marginX), Math.max(0, marginY));
 
     const img = document.getElementById("um-preview-img");
     if (!img) return;

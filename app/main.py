@@ -265,6 +265,20 @@ async def get_page_preview(
 
     page = doc[page_num - 1]
     mat = fitz.Matrix(scale, scale)
+    # PyMuPDF renders only the CropBox area by default.  When the CropBox is
+    # inset from the MediaBox (common in Illustrator/Canva exports where
+    # CropBox = TrimBox), the rendered image starts at the CropBox origin, but
+    # all overlay coordinate math is in MediaBox space — causing every overlay
+    # line to be shifted by the CropBox inset offset.
+    # Fix: write CropBox = MediaBox directly into the page dict (bypassing
+    # PyMuPDF's strict-containment validation in set_cropbox) so the pixmap
+    # covers the entire canvas and pixel (0,0) aligns with MediaBox (0,0).
+    media = page.mediabox
+    doc.xref_set_key(
+        page.xref,
+        "CropBox",
+        f"[{media.x0} {media.y0} {media.x1} {media.y1}]",
+    )
     pix = page.get_pixmap(matrix=mat, alpha=False)
 
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert("RGBA")
@@ -275,8 +289,6 @@ async def get_page_preview(
         img.save(buf, format="JPEG", quality=88)
         buf.seek(0)
         return Response(content=buf.read(), media_type="image/jpeg")
-
-    media = page.mediabox
 
     # ── Resolve trim & bleed rectangles ─────────────────────────────
     # If the caller supplies explicit override dimensions use compute_boxes
