@@ -57,12 +57,9 @@ body {
    Upload / Dropzone
    ============================================================ */
 .upload-section {
-    margin-bottom: 1.35rem;
     background: #ffffffcc;
     backdrop-filter: blur(4px);
-    border: 1px solid #e2e8f0;
     border-radius: 16px;
-    padding: 1rem;
     box-shadow: 0 14px 38px rgba(15, 23, 42, 0.08);
 }
 

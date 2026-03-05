@@ -271,11 +271,15 @@ function fpUpdatePreview() {
     const trimHPt = hIn * 72;
     const requestedBleedPt = 9.0;
 
-    // Compute actual bleed: capped by the available margin on each axis so we
-    // never claim more bleed than the canvas can provide.
+    // When the canvas is smaller than trim + bleed on any axis, the server will
+    // expand the MediaBox to make room (see set_pdf_boxes / _expand_and_center).
+    // Always pass the full requested bleed to the preview so the overlay shows
+    // the bleed ring extending into the gray padding area, accurately representing
+    // what the downloaded file will look like.
     const marginX = canvasWPt > 0 ? (canvasWPt - trimWPt) / 2 : requestedBleedPt;
     const marginY = canvasHPt > 0 ? (canvasHPt - trimHPt) / 2 : requestedBleedPt;
-    const actualBleedPt = Math.min(requestedBleedPt, Math.max(0, marginX), Math.max(0, marginY));
+    const needsExpansion = marginX < requestedBleedPt || marginY < requestedBleedPt;
+    const previewBleedPt = requestedBleedPt;
 
     if (dlBtn) dlBtn.disabled = false;
 
@@ -285,7 +289,7 @@ function fpUpdatePreview() {
         const url = `/check/${jobId}/preview/${fpCurrentPage}?scale=2.0` +
             `&ov_trim_w_pt=${trimWPt.toFixed(2)}` +
             `&ov_trim_h_pt=${trimHPt.toFixed(2)}` +
-            `&ov_bleed_pt=${actualBleedPt.toFixed(3)}`;
+            `&ov_bleed_pt=${previewBleedPt.toFixed(3)}`;
         img.classList.add("loading");
         img.onload = () => img.classList.remove("loading");
         img.onerror = () => img.classList.remove("loading");
@@ -303,12 +307,10 @@ function fpUpdatePreview() {
         trimVal.textContent = `${wIn.toFixed(3)}" × ${hIn.toFixed(3)}" — centered`;
     }
     if (bleedVal) {
-        if (actualBleedPt > 0.5) {
-            const bleedIn = (actualBleedPt / 72).toFixed(3);
-            bleedVal.textContent = `trim + ${bleedIn}" per side`;
-        } else {
-            bleedVal.textContent = "No bleed margin — canvas = trim size";
-        }
+        const bleedIn = (requestedBleedPt / 72).toFixed(3);
+        bleedVal.textContent = needsExpansion
+            ? `${bleedIn}" per side (canvas expanded to fit)`
+            : `${bleedIn}" per side`;
     }
 }
 
