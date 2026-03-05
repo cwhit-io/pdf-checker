@@ -452,16 +452,20 @@ def set_pdf_boxes(
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
-    # Detect whether any page needs MediaBox expansion
+    # Detect whether any page needs MediaBox expansion.
+    # Expansion is required not only when the trim doesn't fit (mx < 0) but
+    # also when the existing margin is smaller than the requested bleed — e.g.
+    # a business-card PDF uploaded at its exact trim size (mx == 0) has no
+    # room for bleed and must be expanded.
     needs_expansion = False
     for page in doc:
         media = page.mediabox
         mx = (media.width - trim_w_pt) / 2
         my = (media.height - trim_h_pt) / 2
-        if mx < 0 or my < 0:
+        if mx < bleed_pt or my < bleed_pt:
             mx_r = (media.width - trim_h_pt) / 2
             my_r = (media.height - trim_w_pt) / 2
-            if not (mx_r >= 0 and my_r >= 0):
+            if not (mx_r >= bleed_pt and my_r >= bleed_pt):
                 needs_expansion = True
                 break
 
