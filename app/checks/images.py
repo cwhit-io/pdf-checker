@@ -6,6 +6,8 @@ LOW_DPI_ERROR = 150  # Below this: definite problem
 LOW_DPI_WARN = 250  # Below this: warn
 TARGET_DPI = 300  # Ideal for print
 
+HAIRLINE_PT = 0.25  # Lines thinner than this (0.25 pt ≈ 0.09 mm) are hairlines
+
 
 def check_images(doc: fitz.Document) -> List[CheckItem]:
     checks: List[CheckItem] = []
@@ -99,6 +101,43 @@ def check_images(doc: fitz.Document) -> List[CheckItem]:
                 name=f"Image Resolution ({total_images} image{'s' if total_images > 1 else ''})",
                 passed=True,
                 detail=f"All {total_images} image(s) have good resolution for print",
+                severity="info",
+            )
+        )
+
+    # ── Hairline detection ────────────────────────────────────────────────
+    hairline_pages: list[str] = []
+    for page_num, page in enumerate(doc, 1):
+        try:
+            drawings = page.get_drawings()
+        except Exception:
+            continue
+        for d in drawings:
+            stroke_w = d.get("width", None)
+            if stroke_w is not None and 0 < stroke_w < HAIRLINE_PT:
+                hairline_pages.append(f"p{page_num} ({stroke_w:.3f} pt)")
+                break  # one per page is enough
+
+    if hairline_pages:
+        checks.append(
+            CheckItem(
+                name=f"Hairline Strokes ({len(hairline_pages)} page{'s' if len(hairline_pages) > 1 else ''})",
+                passed=False,
+                detail=(
+                    f"Lines thinner than {HAIRLINE_PT} pt found on: "
+                    + ", ".join(hairline_pages[:6])
+                    + (" …" if len(hairline_pages) > 6 else "")
+                    + " — may disappear or print unevenly"
+                ),
+                severity="warning",
+            )
+        )
+    else:
+        checks.append(
+            CheckItem(
+                name="Hairline Strokes",
+                passed=True,
+                detail=f"No strokes thinner than {HAIRLINE_PT} pt detected",
                 severity="info",
             )
         )
