@@ -53,10 +53,14 @@ def _trim_rect_for_page(
     if crop_box is not None and not _rect_approx_equal(crop_box, media):
         return crop_box
 
-    # Inferred from bleed geometry (only if PDF actually has a BleedBox)
+    # Inferred from bleed geometry (only if PDF actually has a distinct BleedBox)
     bleed_info = infer_page_bleed(page)
     if bleed_info is not None and bleed_info.get("source") == "explicit":
-        return bleed_info["trim"]
+        trim = bleed_info["trim"]
+        # Only use the inferred trim if it's meaningfully inside the MediaBox,
+        # i.e. the PDF genuinely has a BleedBox that is larger than the trim.
+        if not _rect_approx_equal(trim, page.mediabox):
+            return trim
 
     return None
 
