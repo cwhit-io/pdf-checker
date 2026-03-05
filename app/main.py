@@ -24,6 +24,11 @@ from .checks.fonts import check_fonts
 from .checks.color import check_color
 from .checks.images import check_images
 from .checks.safe_zone import check_safe_zone
+from .checks.transparency import check_transparency
+from .checks.overprint import check_overprint
+from .checks.ink_density import check_ink_density
+from .checks.security import check_security
+from .checks.metadata import check_metadata
 from .fix_pdf import (
     detect_print_geometry,
     quick_has_rgb,
@@ -175,6 +180,51 @@ async def run_safe_zone(request: Request, job_id: str):
     doc = load_pdf_from_bytes(job.pdf_bytes)
     checks = check_safe_zone(doc)
     store_results(job_id, "safe_zone", checks)
+    return _cards(request, checks)
+
+
+@app.get("/check/{job_id}/transparency", response_class=HTMLResponse)
+async def run_transparency(request: Request, job_id: str):
+    job = _require_job(job_id)
+    doc = load_pdf_from_bytes(job.pdf_bytes)
+    checks = check_transparency(doc)
+    store_results(job_id, "transparency", checks)
+    return _cards(request, checks)
+
+
+@app.get("/check/{job_id}/overprint", response_class=HTMLResponse)
+async def run_overprint(request: Request, job_id: str):
+    job = _require_job(job_id)
+    doc = load_pdf_from_bytes(job.pdf_bytes)
+    checks = check_overprint(doc)
+    store_results(job_id, "overprint", checks)
+    return _cards(request, checks)
+
+
+@app.get("/check/{job_id}/ink_density", response_class=HTMLResponse)
+async def run_ink_density(request: Request, job_id: str):
+    job = _require_job(job_id)
+    doc = load_pdf_from_bytes(job.pdf_bytes)
+    checks = check_ink_density(doc)
+    store_results(job_id, "ink_density", checks)
+    return _cards(request, checks)
+
+
+@app.get("/check/{job_id}/security", response_class=HTMLResponse)
+async def run_security(request: Request, job_id: str):
+    job = _require_job(job_id)
+    doc = load_pdf_from_bytes(job.pdf_bytes)
+    checks = check_security(doc, len(job.pdf_bytes))
+    store_results(job_id, "security", checks)
+    return _cards(request, checks)
+
+
+@app.get("/check/{job_id}/metadata", response_class=HTMLResponse)
+async def run_metadata(request: Request, job_id: str):
+    job = _require_job(job_id)
+    doc = load_pdf_from_bytes(job.pdf_bytes)
+    checks = check_metadata(doc)
+    store_results(job_id, "metadata", checks)
     return _cards(request, checks)
 
 
@@ -405,13 +455,15 @@ async def get_page_preview(
 @app.get("/check/{job_id}/status", response_class=HTMLResponse)
 async def check_status(request: Request, job_id: str):
     job = _require_job(job_id)
+    done = job.is_complete()
     return templates.TemplateResponse(
         "partials/overall_badge.html",
         {
             "request": request,
             "job_id": job_id,
-            "done": job.is_complete(),
-            "passed": job.overall_pass() if job.is_complete() else False,
+            "done": done,
+            "passed": job.overall_pass() if done else False,
+            "quality_score": job.quality_score if done else None,
         },
     )
 

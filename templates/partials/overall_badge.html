@@ -2,6 +2,9 @@
 {# No hx-* attrs — HTMX stops polling once this replaces the element #}
 <div id="overall-badge" class="overall-badge {{ 'pass' if passed else 'fail' }}">
   {{ "✓ PASS" if passed else "✗ FAIL" }}
+  {% if quality_score is not none %}
+  <span class="quality-score" title="Quality score: {{ quality_score }}/100">{{ quality_score }}/100</span>
+  {% endif %}
 </div>
 {% else %}
 {# Still running — keep polling #}

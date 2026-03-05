@@ -243,6 +243,16 @@ body {
     gap: 0.35rem;
 }
 
+.quality-score {
+    margin-left: 0.5rem;
+    font-size: 0.8em;
+    font-weight: 600;
+    opacity: 0.75;
+    background: rgba(0,0,0,0.08);
+    padding: 0.1em 0.45em;
+    border-radius: 6px;
+}
+
 /* Small inline spinner used inside the overall badge */
 .badge-spinner {
     display: inline-block;

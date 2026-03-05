@@ -11,6 +11,11 @@ GROUPS: tuple[str, ...] = (
     "images",
     "fonts",
     "safe_zone",
+    "transparency",
+    "overprint",
+    "ink_density",
+    "security",
+    "metadata",
 )
 
 GROUP_LABELS: dict[str, str] = {
@@ -19,6 +24,11 @@ GROUP_LABELS: dict[str, str] = {
     "images": "Image Resolution",
     "fonts": "Fonts",
     "safe_zone": "Safe Zone",
+    "transparency": "Transparency",
+    "overprint": "Overprint",
+    "ink_density": "Ink Density",
+    "security": "Security",
+    "metadata": "Metadata",
 }
 
 GROUP_ICONS: dict[str, str] = {
@@ -27,6 +37,11 @@ GROUP_ICONS: dict[str, str] = {
     "images": "🖼️",
     "fonts": "🔤",
     "safe_zone": "📏",
+    "transparency": "🔍",
+    "overprint": "🖨️",
+    "ink_density": "💧",
+    "security": "🔒",
+    "metadata": "📋",
 }
 
 
@@ -38,6 +53,7 @@ class Job:
     pages: list[PageInfo]
     detected_trim: dict = field(default_factory=dict)
     results: dict[str, list[CheckItem]] = field(default_factory=dict)
+    quality_score: int = 100  # 0–100, updated after all checks complete
 
     def is_complete(self) -> bool:
         return all(g in self.results for g in GROUPS)
@@ -45,6 +61,25 @@ class Job:
     def overall_pass(self) -> bool:
         all_checks = [c for group in self.results.values() for c in group]
         return all(c.passed for c in all_checks if c.severity == "error")
+
+    def compute_quality_score(self) -> int:
+        """Compute a 0–100 quality score based on completed checks."""
+        all_checks = [c for group in self.results.values() for c in group]
+        if not all_checks:
+            return 100
+        deductions = 0
+        for c in all_checks:
+            if c.passed:
+                continue
+            if c.severity == "error":
+                deductions += 15
+            elif c.severity == "warning":
+                deductions += 5
+            else:
+                deductions += 1
+        score = max(0, 100 - deductions)
+        self.quality_score = score
+        return score
 
 
 _store: dict[str, Job] = {}
@@ -82,3 +117,5 @@ def store_results(job_id: str, group: str, checks: list[CheckItem]) -> None:
     job = _store.get(job_id)
     if job:
         job.results[group] = checks
+        # Recompute quality score incrementally after each group
+        job.compute_quality_score()
