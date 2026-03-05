@@ -146,6 +146,50 @@
                   />
                   <span>Fix</span>
                 </label>
+                {% elif group == "transparency" %}
+                <label class="fp-row-fix-toggle{% if not gs_available %} fp-row-fix-toggle--disabled{% endif %}" title="Flatten transparency for press compatibility (PDF 1.3)">
+                  <input
+                    type="checkbox"
+                    name="flatten_transparency"
+                    value="1"
+                    {% if gs_available and has_transparency %}checked{% endif %}
+                    {% if not gs_available %}disabled{% endif %}
+                  />
+                  <span>Flatten</span>
+                </label>
+                {% elif group == "security" %}
+                {% if has_js %}
+                <label class="fp-row-fix-toggle" title="Remove all JavaScript from the PDF">
+                  <input type="checkbox" name="remove_js" value="1" checked />
+                  <span>Remove JS</span>
+                </label>
+                {% endif %}
+                {% if has_forms %}
+                <label class="fp-row-fix-toggle{% if not gs_available %} fp-row-fix-toggle--disabled{% endif %}" title="Flatten interactive form fields into static content">
+                  <input
+                    type="checkbox"
+                    name="flatten_forms"
+                    value="1"
+                    {% if gs_available and has_forms %}checked{% endif %}
+                    {% if not gs_available %}disabled{% endif %}
+                  />
+                  <span>Flatten Forms</span>
+                </label>
+                {% endif %}
+                {% elif group == "metadata" %}
+                {% if has_attachments %}
+                <label class="fp-row-fix-toggle" title="Remove all embedded file attachments from the PDF">
+                  <input type="checkbox" name="remove_attachments" value="1" checked />
+                  <span>Remove</span>
+                </label>
+                {% endif %}
+                {% elif group == "images" %}
+                {% if has_rotation %}
+                <label class="fp-row-fix-toggle" title="Reset all page rotations to 0°">
+                  <input type="checkbox" name="normalize_rotation" value="1" checked />
+                  <span>Fix Rotation</span>
+                </label>
+                {% endif %}
                 {% endif %}
 
                 <span class="fp-check-row-badge fp-check-row-badge--loading" id="fp-badge-{{ group }}">…</span>
@@ -159,7 +203,7 @@
                   class="fp-check-list-hidden"
                   id="cl-{{ group }}"
                   hx-get="/check/{{ job_id }}/{{ group }}"
-                  {% if group == "bleed_trim" %}
+                  {% if group == "bleed_trim" or group == "safe_zone" %}
                   hx-include="#fp-preset-trim"
                   hx-trigger="load, fp-trim-changed from:body"
                   {% else %}
@@ -173,6 +217,16 @@
             </div>
 
           </div><!-- /fp-fields -->
+
+          <!-- ── Advanced output options ── -->
+          {% if gs_available %}
+          <div class="fp-advanced-opts">
+            <label class="fp-row-fix-toggle" title="Ensure output is written as PDF 1.7 (Ghostscript)">
+              <input type="checkbox" name="downgrade_version" value="1" />
+              <span>Force PDF 1.7 output</span>
+            </label>
+          </div>
+          {% endif %}
 
           <div class="fp-form-footer">
             <button type="submit" class="fp-download-btn" id="fp-dl-btn" disabled>

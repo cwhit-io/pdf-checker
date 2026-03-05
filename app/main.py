@@ -32,6 +32,11 @@ from .checks.metadata import check_metadata
 from .fix_pdf import (
     detect_print_geometry,
     quick_has_rgb,
+    quick_has_js,
+    quick_has_forms,
+    quick_has_attachments,
+    quick_has_rotation,
+    quick_has_transparency,
     build_fixed_pdf,
     build_confirmed_trim,
     compute_boxes,
@@ -110,6 +115,11 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 
     page_boxes = get_page_boxes(doc)
     has_rgb = quick_has_rgb(doc)
+    has_js = quick_has_js(doc)
+    has_forms = quick_has_forms(doc)
+    has_attachments = quick_has_attachments(doc)
+    has_rotation = quick_has_rotation(doc)
+    has_transparency = quick_has_transparency(doc)
 
     return templates.TemplateResponse(
         "partials/results_container.html",
@@ -125,6 +135,11 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             "group_icons": GROUP_ICONS,
             "detected_trim": confirmed_trim,
             "has_rgb": has_rgb,
+            "has_js": has_js,
+            "has_forms": has_forms,
+            "has_attachments": has_attachments,
+            "has_rotation": has_rotation,
+            "has_transparency": has_transparency,
             "form_sizes": FORM_SIZES,
             "gs_available": GS_AVAILABLE,
         },
@@ -175,10 +190,14 @@ async def run_images(request: Request, job_id: str):
 
 
 @app.get("/check/{job_id}/safe_zone", response_class=HTMLResponse)
-async def run_safe_zone(request: Request, job_id: str):
+async def run_safe_zone(
+    request: Request,
+    job_id: str,
+    preset_trim: str = Query(default=""),
+):
     job = _require_job(job_id)
     doc = load_pdf_from_bytes(job.pdf_bytes)
-    checks = check_safe_zone(doc)
+    checks = check_safe_zone(doc, preset_trim=preset_trim)
     store_results(job_id, "safe_zone", checks)
     return _cards(request, checks)
 
@@ -239,6 +258,12 @@ async def download_fixed_pdf(
     trim_h_in: float = Form(default=0.0),
     apply_trim_bleed: str = Form(default=""),
     convert_cmyk: str = Form(default=""),
+    remove_js: str = Form(default=""),
+    flatten_forms: str = Form(default=""),
+    remove_attachments: str = Form(default=""),
+    normalize_rotation: str = Form(default=""),
+    flatten_transparency: str = Form(default=""),
+    downgrade_version: str = Form(default=""),
 ):
     job = _require_job(job_id)
     use_trim_fix = apply_trim_bleed == "1"
@@ -270,10 +295,18 @@ async def download_fixed_pdf(
         tw_pt = job.detected_trim.get("trim_w_pt", job.pages[0].width_pt)
         th_pt = job.detected_trim.get("trim_h_pt", job.pages[0].height_pt)
 
-    do_cmyk = convert_cmyk == "1"
-
     fixed_bytes, _notes = build_fixed_pdf(
-        job.pdf_bytes, tw_pt, th_pt, bleed_pt, do_cmyk
+        job.pdf_bytes,
+        tw_pt,
+        th_pt,
+        bleed_pt,
+        convert_cmyk=convert_cmyk == "1",
+        remove_js=remove_js == "1",
+        flatten_forms=flatten_forms == "1",
+        remove_attachments_flag=remove_attachments == "1",
+        normalize_rotation=normalize_rotation == "1",
+        flatten_transparency=flatten_transparency == "1",
+        downgrade_version=downgrade_version == "1",
     )
 
     stem = job.filename.rsplit(".", 1)[0]

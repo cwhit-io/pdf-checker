@@ -1940,6 +1940,15 @@ body {
     opacity: 0.55;
 }
 
+.fp-advanced-opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 0.25rem 0;
+    border-top: 1px dashed #e2e8f0;
+    margin-top: 0.5rem;
+}
+
 .fp-check-row-badge {
     font-size: 0.72rem;
     font-weight: 700;

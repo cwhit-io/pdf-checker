@@ -275,6 +275,66 @@ def quick_has_rgb(doc: fitz.Document) -> bool:
     return False
 
 
+def quick_has_js(doc: fitz.Document) -> bool:
+    """True if the document contains any JavaScript."""
+    for xref in range(1, doc.xref_length()):
+        try:
+            obj = doc.xref_object(xref, compressed=False)
+            if "/JavaScript" in obj or "/JS " in obj or "/JS\n" in obj:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def quick_has_forms(doc: fitz.Document) -> bool:
+    """True if the document has interactive form fields."""
+    try:
+        for page in doc:
+            if list(page.widgets()):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def quick_has_attachments(doc: fitz.Document) -> bool:
+    """True if the document has embedded file attachments."""
+    try:
+        return bool(doc.embfile_count())
+    except Exception:
+        return False
+
+
+def quick_has_rotation(doc: fitz.Document) -> bool:
+    """True if any page has a non-zero /Rotate value."""
+    try:
+        for page in doc:
+            if page.rotation not in (0, 360):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def quick_has_transparency(doc: fitz.Document) -> bool:
+    """Fast scan for any transparency (opacity / soft mask / non-Normal blend mode)."""
+    import re as _re
+
+    for xref in range(1, doc.xref_length()):
+        try:
+            obj = doc.xref_object(xref, compressed=False)
+        except Exception:
+            continue
+        if "/SMask" in obj or "/BM /" in obj:
+            return True
+        if _re.search(r"/ca\s+(?!1(?:\.0+)?\s)[0-9]", obj):
+            return True
+        if _re.search(r"/CA\s+(?!1(?:\.0+)?\s)[0-9]", obj):
+            return True
+    return False
+
+
 # ── PDF mutation ───────────────────────────────────────────────────────────
 
 
@@ -506,16 +566,162 @@ def convert_to_cmyk_gs(pdf_bytes: bytes) -> tuple[bytes, str]:
             pass
 
 
+def remove_javascript(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """Remove all JavaScript from the PDF using PyMuPDF scrub."""
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        doc.scrub(
+            javascript=True,
+            attached_files=False,
+            embedded_files=False,
+            hidden_text=False,
+            metadata=False,
+            redact_images=0,
+            reset_fields=False,
+            reset_responses=False,
+            sanitize_links=False,
+            xml_metadata=False,
+        )
+        out = doc.tobytes(garbage=3, deflate=True)
+        doc.close()
+        return out, ""
+    except Exception as exc:
+        return pdf_bytes, str(exc)
+
+
+def remove_attachments(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """Remove all embedded file attachments from the PDF."""
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        names = list(doc.embfile_names())
+        if not names:
+            doc.close()
+            return pdf_bytes, ""
+        for name in names:
+            try:
+                doc.embfile_del(name)
+            except Exception:
+                pass
+        out = doc.tobytes(garbage=3, deflate=True)
+        doc.close()
+        return out, ""
+    except Exception as exc:
+        return pdf_bytes, str(exc)
+
+
+def normalize_page_rotation(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """Reset all page /Rotate entries to 0."""
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        rotated = 0
+        for page in doc:
+            if page.rotation not in (0, 360):
+                page.set_rotation(0)
+                rotated += 1
+        if rotated == 0:
+            doc.close()
+            return pdf_bytes, ""
+        out = doc.tobytes(garbage=3, deflate=True)
+        doc.close()
+        return out, ""
+    except Exception as exc:
+        return pdf_bytes, str(exc)
+
+
+def _gs_pdf_write(
+    pdf_bytes: bytes,
+    extra_args: list[str],
+    timeout: int = 120,
+) -> tuple[bytes, str]:
+    """Shared Ghostscript pdfwrite helper. Returns (bytes, error_str)."""
+    if not GS_AVAILABLE:
+        return pdf_bytes, "Ghostscript not found on PATH"
+
+    in_fd, in_path = tempfile.mkstemp(suffix=".pdf")
+    out_fd, out_path = tempfile.mkstemp(suffix=".pdf")
+    try:
+        os.write(in_fd, pdf_bytes)
+        os.close(in_fd)
+        os.close(out_fd)
+
+        cmd = (
+            [
+                GS_BINARY,
+                "-dBATCH",
+                "-dNOPAUSE",
+                "-dSAFER",
+                "-q",
+                "-sDEVICE=pdfwrite",
+                f"-sOutputFile={out_path}",
+            ]
+            + extra_args
+            + [in_path]
+        )
+
+        result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+
+        if result.returncode != 0:
+            err = result.stderr.decode(errors="replace")[:400]
+            return pdf_bytes, f"Ghostscript error: {err}"
+
+        with open(out_path, "rb") as f:
+            return f.read(), ""
+
+    except subprocess.TimeoutExpired:
+        return pdf_bytes, f"Ghostscript timed out after {timeout} s"
+    except Exception as exc:
+        return pdf_bytes, str(exc)
+    finally:
+        for p in (in_path, out_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
+def flatten_transparency_gs(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """Flatten transparency by rendering to PDF 1.3 (Ghostscript)."""
+    return _gs_pdf_write(
+        pdf_bytes,
+        ["-dCompatibilityLevel=1.3"],
+    )
+
+
+def flatten_forms_gs(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """Flatten interactive form fields into static content (Ghostscript)."""
+    return _gs_pdf_write(
+        pdf_bytes,
+        [
+            "-dCompatibilityLevel=1.4",
+            "-dPrinted=true",
+            "-dNOCACHE",
+        ],
+    )
+
+
+def downgrade_pdf_version_gs(pdf_bytes: bytes) -> tuple[bytes, str]:
+    """Downgrade PDF to version 1.7 (Ghostscript)."""
+    return _gs_pdf_write(
+        pdf_bytes,
+        ["-dCompatibilityLevel=1.7"],
+    )
+
+
 def build_fixed_pdf(
     pdf_bytes: bytes,
     trim_w_pt: float,
     trim_h_pt: float,
     bleed_pt: float,
     convert_cmyk: bool = False,
+    remove_js: bool = False,
+    flatten_forms: bool = False,
+    remove_attachments_flag: bool = False,
+    normalize_rotation: bool = False,
+    flatten_transparency: bool = False,
+    downgrade_version: bool = False,
 ) -> tuple[bytes, list[str]]:
     """
-    Assemble a corrected PDF with the given trim/bleed box settings and
-    optional CMYK conversion.
+    Assemble a corrected PDF applying all requested fixes.
 
     Returns (fixed_bytes, notes) where notes is a list of human-readable
     strings describing what was done (or any warnings).
@@ -523,7 +729,53 @@ def build_fixed_pdf(
     notes: list[str] = []
     current = pdf_bytes
 
-    # CMYK conversion first so boxes survive on the output PDF
+    # --- PyMuPDF-only fixes (fast, no GS needed) ---
+    if remove_js:
+        current, err = remove_javascript(current)
+        if err:
+            notes.append(f"⚠ Remove JavaScript failed: {err}")
+        else:
+            notes.append("✓ JavaScript removed")
+
+    if remove_attachments_flag:
+        current, err = remove_attachments(current)
+        if err:
+            notes.append(f"⚠ Remove attachments failed: {err}")
+        else:
+            notes.append("✓ Embedded attachments removed")
+
+    if normalize_rotation:
+        current, err = normalize_page_rotation(current)
+        if err:
+            notes.append(f"⚠ Normalize rotation failed: {err}")
+        else:
+            notes.append("✓ Page rotation normalized to 0°")
+
+    # --- Ghostscript fixes ---
+    if flatten_transparency:
+        current, err = flatten_transparency_gs(current)
+        if err:
+            notes.append(f"⚠ Flatten transparency skipped: {err}")
+        else:
+            notes.append(
+                "✓ Transparency flattened (PDF 1.3 compatible) via Ghostscript"
+            )
+
+    if flatten_forms:
+        current, err = flatten_forms_gs(current)
+        if err:
+            notes.append(f"⚠ Flatten forms skipped: {err}")
+        else:
+            notes.append("✓ Interactive form fields flattened via Ghostscript")
+
+    if downgrade_version:
+        current, err = downgrade_pdf_version_gs(current)
+        if err:
+            notes.append(f"⚠ Downgrade PDF version skipped: {err}")
+        else:
+            notes.append("✓ PDF downgraded to version 1.7 via Ghostscript")
+
+    # --- CMYK color conversion (GS, after structural fixes) ---
     if convert_cmyk:
         current, err = convert_to_cmyk_gs(current)
         if err:
@@ -531,6 +783,7 @@ def build_fixed_pdf(
         else:
             notes.append("✓ Converted to CMYK color space via Ghostscript")
 
+    # --- Geometry fixes (always last so boxes survive GS re-write) ---
     current = set_pdf_boxes(current, trim_w_pt, trim_h_pt, bleed_pt)
 
     tw_in = trim_w_pt / 72

@@ -59,9 +59,9 @@ def check_bleed_trim(doc: fitz.Document, preset_trim: str = "") -> List[CheckIte
         checks.append(
             CheckItem(
                 name="Destination Size Selected",
-                passed=False,
-                detail="Select an intended trim size to validate Trim/Crop and BleedBox (.125 in).",
-                severity="warning",
+                passed=True,
+                detail="Select an intended trim size above to validate Trim/Crop and BleedBox (.125 in).",
+                severity="info",
             )
         )
         return checks
