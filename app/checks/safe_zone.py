@@ -107,8 +107,8 @@ def check_safe_zone(doc: fitz.Document, preset_trim: str = "") -> List[CheckItem
             if not text_sample:
                 continue
             if x0 < safe_x0 or y0 < safe_y0 or x1 > safe_x1 or y1 > safe_y1:
-                # Report the nearest edge
-                offending_edge = min(
+                # Find the most-violated edge (largest positive value = worst overshoot)
+                offending_edge = max(
                     (
                         (safe_x0 - x0, "left"),
                         (safe_y0 - y0, "top"),

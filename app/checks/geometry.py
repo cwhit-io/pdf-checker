@@ -49,6 +49,20 @@ def _rect_approx_equal(a: fitz.Rect, b: fitz.Rect, tol: float = 2.0) -> bool:
     )
 
 
+def _page_has_explicit_bleedbox(page: fitz.Page) -> bool:
+    """Return True only when /BleedBox appears in the page's own dictionary.
+
+    PyMuPDF's ``page.bleedbox`` always returns a non-None value (it falls back
+    to the MediaBox when no BleedBox is set), so ``bleedbox is not None`` is
+    never a reliable indicator.  Reading the raw xref string is the only safe
+    way to distinguish an explicitly-set BleedBox from the implicit fallback.
+    """
+    try:
+        return "/BleedBox" in page.parent.xref_object(page.xref, compressed=False)
+    except Exception:
+        return False
+
+
 def infer_page_bleed(page: fitz.Page) -> Optional[dict]:
     """
     Returns bleed/trim geometry for a page.
@@ -69,10 +83,10 @@ def infer_page_bleed(page: fitz.Page) -> Optional[dict]:
     bleed_box = page.bleedbox
     trim_box = page.trimbox
     has_explicit_trim = trim_box is not None and not _rect_approx_equal(trim_box, media)
-    # Treat any present BleedBox as explicit. This lets PDFs that set the
-    # BleedBox to the MediaBox (i.e. = MediaBox) be considered explicitly
-    # configured so the UI preview uses that box when reuploading fixed files.
-    has_explicit_bleed = bleed_box is not None
+    # Use the raw page dictionary to detect an explicit BleedBox.  PyMuPDF's
+    # page.bleedbox always returns a value (falls back to MediaBox), so
+    # ``bleed_box is not None`` is always True and cannot be used here.
+    has_explicit_bleed = _page_has_explicit_bleedbox(page)
 
     # ── Explicit BleedBox wins ────────────────────────────────────
     if has_explicit_bleed:
@@ -198,13 +212,16 @@ def get_page_boxes(doc: fitz.Document) -> list[dict]:
     """
     BOX_ORDER = ["MediaBox", "CropBox", "TrimBox", "BleedBox", "ArtBox"]
 
-    def _fmt(rect: fitz.Rect, media: fitz.Rect, is_media: bool, name: str) -> dict:
-        # Treat BleedBox as explicit when present even if it equals MediaBox.
-        explicit = (
-            is_media
-            or (name == "BleedBox" and rect is not None)
-            or not _rect_approx_equal(rect, media)
-        )
+    def _fmt(
+        rect: fitz.Rect, media: fitz.Rect, is_media: bool, name: str, page: fitz.Page
+    ) -> dict:
+        if is_media:
+            explicit = True
+        elif name == "BleedBox":
+            # Use raw xref check — PyMuPDF bleedbox is never None (falls back to MediaBox)
+            explicit = _page_has_explicit_bleedbox(page)
+        else:
+            explicit = not _rect_approx_equal(rect, media)
         return {
             "x0": round(rect.x0, 2),
             "y0": round(rect.y0, 2),
@@ -223,11 +240,11 @@ def get_page_boxes(doc: fitz.Document) -> list[dict]:
         entry: dict = {
             "page": page.number + 1,
             "boxes": {
-                "MediaBox": _fmt(media, media, True, "MediaBox"),
-                "CropBox": _fmt(page.cropbox, media, False, "CropBox"),
-                "TrimBox": _fmt(page.trimbox, media, False, "TrimBox"),
-                "BleedBox": _fmt(page.bleedbox, media, False, "BleedBox"),
-                "ArtBox": _fmt(page.artbox, media, False, "ArtBox"),
+                "MediaBox": _fmt(media, media, True, "MediaBox", page),
+                "CropBox": _fmt(page.cropbox, media, False, "CropBox", page),
+                "TrimBox": _fmt(page.trimbox, media, False, "TrimBox", page),
+                "BleedBox": _fmt(page.bleedbox, media, False, "BleedBox", page),
+                "ArtBox": _fmt(page.artbox, media, False, "ArtBox", page),
             },
             "box_order": BOX_ORDER,
         }
@@ -376,34 +393,41 @@ def check_geometry(doc: fitz.Document) -> List[CheckItem]:
     pages_with_bleedbox = 0
     insufficient_bleed: List[str] = []
     for i, page in enumerate(doc):
-        # BleedBox is considered present if the attribute exists (PyMuPDF always provides it)
-        # but we want to enforce that it is explicitly set, even if it matches MediaBox.
-        # So, we require that the BleedBox property is present (always true),
-        # and count every page as needing an explicit BleedBox, regardless of value.
-        if hasattr(page, "bleedbox") and page.bleedbox is not None:
-            pages_with_bleedbox += 1
-            # Optionally, check for minimum bleed size:
-            bleed_rect = page.bleedbox
-            media_rect = page.mediabox
-            # Calculate bleed amount (minimum distance from MediaBox to BleedBox edge)
-            sides = (
-                abs(bleed_rect.x0 - media_rect.x0),
-                abs(bleed_rect.y0 - media_rect.y0),
-                abs(bleed_rect.x1 - media_rect.x1),
-                abs(bleed_rect.y1 - media_rect.y1),
+        if not _page_has_explicit_bleedbox(page):
+            continue
+        pages_with_bleedbox += 1
+        bleed_rect = page.bleedbox
+        media_rect = page.mediabox
+        # Bleed is measured from the trim/crop edge to the bleed edge, not
+        # from the media edge.  BleedBox should surround the TrimBox.
+        trim_rect = page.trimbox
+        has_trim = trim_rect is not None and not _rect_approx_equal(
+            trim_rect, media_rect
+        )
+        crop_rect = page.cropbox
+        has_crop = crop_rect is not None and not _rect_approx_equal(
+            crop_rect, media_rect
+        )
+        ref = trim_rect if has_trim else (crop_rect if has_crop else media_rect)
+        sides = (
+            ref.x0 - bleed_rect.x0,
+            ref.y0 - bleed_rect.y0,
+            bleed_rect.x1 - ref.x1,
+            bleed_rect.y1 - ref.y1,
+        )
+        bleed_pt = min(sides)
+        if bleed_pt < BLEED_REQUIRED_PT:
+            insufficient_bleed.append(
+                f"p{i + 1}: {bleed_pt / 72 * 25.4:.2f} mm ({bleed_pt:.1f} pt)"
             )
-            bleed_pt = min(sides)
-            if bleed_pt < BLEED_REQUIRED_PT:
-                insufficient_bleed.append(
-                    f"p{i + 1}: {bleed_pt / 72 * 25.4:.2f} mm ({bleed_pt:.1f} pt)"
-                )
 
     if pages_with_bleedbox == doc.page_count:
-        bleed_detail = (
-            f"BleedBox present on all {doc.page_count} page(s) (explicit or = MediaBox)"
-        )
+        bleed_detail = f"BleedBox explicitly set on all {doc.page_count} page(s)"
     else:
-        bleed_detail = f"BleedBox missing on {doc.page_count - pages_with_bleedbox}/{doc.page_count} page(s)"
+        bleed_detail = (
+            f"BleedBox not explicitly set on "
+            f"{doc.page_count - pages_with_bleedbox}/{doc.page_count} page(s)"
+        )
 
     checks.append(
         CheckItem(
